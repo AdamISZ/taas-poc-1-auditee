@@ -1,14 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
 
-#Main auditee script.
-#This script acts as 
-#1. An installer, setting up keys, browser and browser extensions.
-#2. A marshaller, passing messages between (a) the javascript/html
-#   front end, (b) the Python back-end, including crypto functions
-#   and (c) the peer messaging between auditor and auditee.
-#3. Performs actual crypto audit functions.
-
 from base64 import b64decode, b64encode
 from hashlib import md5, sha1, sha256
 from os.path import join
@@ -123,12 +115,6 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
             self.send_header(key, headers[key])
         self.end_headers()        
 
-    def stop_recording(self):
-        rv = stop_recording()
-        self.respond({'response':'stop_recording', 'status':rv,
-                      'session_path':join(current_session_dir, 'mytrace')})
-        return
-
     def get_certificate(self, args):
         if not args.startswith('b64headers='):
             self.respond({'response':'get_certificate', 'status':'wrong HEAD parameter'})
@@ -210,12 +196,26 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
             try:
                 commit_hash, pms2, signature = commit_session(tlsn_session, response,sf)
                 print ('Got signature: ', binascii.hexlify(signature))
-                with open('sigfile','wb') as f:
+                with open(join(current_session_dir,'sigfile'),'wb') as f:
                     f.write(signature)
-                with open('dtbv','wb') as f:
+                with open(join(current_session_dir,'commit_hash_pms2'),'wb') as f:
                     f.write(commit_hash+pms2)
                 print ('Verifying against notary server pubkey...')
-                print ('Result of verification: ', verify_data('dtbv', 'sigfile'))
+                print ('Result of verification: ', 
+                       verify_data(join(current_session_dir,'commit_hash_pms2'),
+                                   join(current_session_dir,'sigfile')))
+                #now we know we have a valid audit, store it in a file
+                trace_dir = join(current_session_dir, 'myaudit')
+                os.makedirs(trace_dir)
+                zipf = zipfile.ZipFile(join(trace_dir, 'myaudit.zip'), 'w')
+                commit_dir = join(current_session_dir, 'commit')
+                com_dir_files = os.listdir(commit_dir)
+                for onefile in com_dir_files:
+                    if not onefile.startswith(('pms_ee','response', 'tlsver', 'origtlsver', 'domain','IV','cs','certificate.der')): continue
+                    zipf.write(join(commit_dir, onefile), onefile)
+                zipf.write(join(current_session_dir,'sigfile'), 'sigfile')
+                zipf.write(join(current_session_dir,'commit_hash_pms2'),'commit_hash_pms2')
+                zipf.close()                
                 break
             except Exception, e:
                 if i == 9:
@@ -279,9 +279,7 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         request = self.path
         print ('browser sent ' + request[:80] + '... request',end='\r\n')
         # example HEAD string "/command?parameter=124value1&para2=123value2"
-        if request.startswith('/stop_recording'):
-            self.stop_recording()
-        elif request.startswith('/get_certificate'):
+        if request.startswith('/get_certificate'):
             global suspended_session
             suspended_session  = self.get_certificate(request.split('?', 1)[1])
         elif request.startswith('/start_audit'):
@@ -353,25 +351,14 @@ def prepare_pms(tlsn_session):
                      'double check that you are using a valid public key modulus for this site; '+\
                      'it may have expired.')
 
-#peer messaging protocol
 def send_and_recv (hdr, dat,timeout=5):
     rqstring = '/'+hdr+':'+b64encode(dat)
     hcts.request("HEAD", rqstring)
     response = hcts.getresponse() 
     received_hdr, received_dat = (response.getheader('response'),response.getheader('data'))
+    if 'busy' in received_hdr:
+        raise Exception("Notary server is busy, quitting. Try again later.")
     return ('success', received_hdr+b64decode(received_dat))
-
-#complete audit function
-def stop_recording():
-    trace_dir = join(current_session_dir, 'mytrace')
-    os.makedirs(trace_dir)
-    zipf = zipfile.ZipFile(join(trace_dir, 'mytrace.zip'), 'w')
-    commit_dir = join(current_session_dir, 'commit')
-    com_dir_files = os.listdir(commit_dir)
-    for onefile in com_dir_files:
-        if not onefile.startswith(('pms_ee','response', 'tlsver', 'origtlsver', 'domain','IV','cs','certificate.der')): continue
-        zipf.write(join(commit_dir, onefile), onefile)
-    zipf.close()
     
 #reconstruct correct http headers
 #for passing to TLSNotary custom ssl session
