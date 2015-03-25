@@ -256,8 +256,8 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         self.respond({'response':'cleartext', 'status':'success', 'next_action':'audit_finished', 'argument':b64encode(rv[1])})        
 
     def get_advanced(self):
-        self.respond({'irc_server':shared.config.get('IRC','irc_server'),
-                      'channel_name':shared.config.get('IRC','channel_name'),'irc_port':shared.config.get('IRC','irc_port')})
+        self.respond({'irc_server':shared.config.get('Notary','server_name'),
+                      'channel_name':shared.config.get('Notary','server_name'),'irc_port':shared.config.get('Notary','server_port')})
         return        
 
     def set_advanced(self, args):
@@ -269,9 +269,9 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
             print ('Failed to reset the irc config. Server was:',args[0].split('=')[1], \
                    ' and channel was: ', args[1].split('=')[1])
             return
-        shared.config.set('IRC','irc_server',args[0].split('=')[1])
-        shared.config.set('IRC','channel_name',args[1].split('=')[1])
-        shared.config.set('IRC','irc_port',args[2].split('=')[1])
+        shared.config.set('Notary','server_name',args[0].split('=')[1])
+        shared.config.set('Notary','server_name',args[1].split('=')[1])
+        shared.config.set('Notary','server_port',args[2].split('=')[1])
         with open(shared.config_location,'wb') as f: shared.config.write(f)
         return        
 

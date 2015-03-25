@@ -10,8 +10,8 @@ import select, time, socket
 config = SafeConfigParser()
 config_location = os.path.join(os.path.dirname(os.path.realpath(__file__)),'tlsnotary.ini')
 
-required_options = {'IRC':['irc_server','irc_port','channel_name']}
-
+#required_options = {'Notary':['notary_server','notary_port']}
+required_options = {}
 reliable_sites = {}
 smallprimes = (2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97,101)            
 
