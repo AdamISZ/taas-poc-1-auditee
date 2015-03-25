@@ -205,9 +205,7 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
                        verify_data(join(current_session_dir,'commit_hash_pms2'),
                                    join(current_session_dir,'sigfile')))
                 #now we know we have a valid audit, store it in a file
-                trace_dir = join(current_session_dir, 'myaudit')
-                os.makedirs(trace_dir)
-                zipf = zipfile.ZipFile(join(trace_dir, 'myaudit.zip'), 'w')
+                zipf = zipfile.ZipFile(join(current_session_dir, 'myaudit.zip'), 'w')
                 commit_dir = join(current_session_dir, 'commit')
                 com_dir_files = os.listdir(commit_dir)
                 for onefile in com_dir_files:
@@ -215,7 +213,10 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
                     zipf.write(join(commit_dir, onefile), onefile)
                 zipf.write(join(current_session_dir,'sigfile'), 'sigfile')
                 zipf.write(join(current_session_dir,'commit_hash_pms2'),'commit_hash_pms2')
-                zipf.close()                
+                zipf.close()
+                print ("**Your data has been successfully notarized! ",
+                "You can pass the file " , join(current_session_dir, "myaudit.zip"),
+                " to an auditor for verification.")
                 break
             except Exception, e:
                 if i == 9:
