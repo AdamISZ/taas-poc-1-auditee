@@ -83,54 +83,6 @@ def extract_audit_data(audit_filename):
         audit_data['commit_hash'] = f.read(32)
         audit_data['pubkey_pem'] = f.read()
     return audit_data
-        
-        
-        
-def decrypt_html(pms2, tlsn_session,sf):
-    '''Receive correct server mac key and then decrypt server response (html),
-    (includes authentication of response). Submit resulting html for browser
-    for display (optionally render by stripping http headers).'''
-    try:
-        tlsn_session.auditor_secret = pms2[:tlsn_session.n_auditor_entropy]
-        tlsn_session.set_auditor_secret()
-        tlsn_session.set_master_secret_half() #without arguments sets the whole MS
-        tlsn_session.do_key_expansion() #also resets encryption connection state
-    except shared.TLSNSSLError:
-        shared.ssl_dump(tlsn_session)
-        raise
-    if global_use_slowaes or not tlsn_session.chosen_cipher_suite in [47,53]:
-        #either using slowAES or a RC4 ciphersuite
-        try:
-            plaintext,bad_mac = tlsn_session.process_server_app_data_records()
-        except shared.TLSNSSLError:
-            shared.ssl_dump(tlsn_session)
-            raise
-        if bad_mac:
-            raise Exception("ERROR! Audit not valid! Plaintext is not authenticated.")
-        return decrypt_html_stage2(plaintext, tlsn_session, sf)
-    else: #AES ciphersuite and not using slowaes
-        try:
-            ciphertexts = tlsn_session.get_ciphertexts()
-        except:
-            shared.ssl_dump(tlsn_session)
-            raise
-        return ('decrypt', ciphertexts)
-
-
-def decrypt_html_stage2(plaintext, tlsn_session, sf):
-    plaintext = shared.dechunk_http(plaintext)
-    if global_use_gzip:    
-        plaintext = shared.gunzip_http(plaintext)
-    #write a session dump for checking even in case of success
-    with open(join(current_session_dir,'session_dump'+sf),'wb') as f: f.write(tlsn_session.dump())
-    commit_dir = join(current_session_dir, 'commit')
-    html_path = join(commit_dir,'html-'+sf)
-    with open(html_path,'wb') as f: f.write('\xef\xbb\xbf'+plaintext) #see "Byte order mark"
-    if not int(shared.config.get("General","prevent_render")):
-        html_path = join(commit_dir,'forbrowser-'+sf+'.html')
-        with open(html_path,'wb') as f:
-            f.write('\r\n\r\n'.join(plaintext.split('\r\n\r\n')[1:]))
-    return ('success',html_path)
 
 #unpack and check validity of Python modules
 def first_run_check(modname,modhash):
