@@ -197,16 +197,18 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         print ('Got signature: ', binascii.hexlify(signature))
         with open(join(current_session_dir,'sigfile'),'wb') as f:
             f.write(signature)
-        with open(join(current_session_dir,'commit_hash_pms2'),'wb') as f:
-            f.write(commit_hash+pms2)
+        with open(join(current_session_dir,'commit_hash_pms2_servermod'),'wb') as f:
+            f.write(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus))
         print ('Verifying against notary server pubkey...')
         print ('Result of verification: ', 
-               verify_data(join(current_session_dir,'commit_hash_pms2'),
+               verify_data(join(current_session_dir,'commit_hash_pms2_servermod'),
                            join(current_session_dir,'sigfile')))
         
         #another option would be a fixed binary format for a *.audit file: 
         #cs|cr|sr|pms1|pms2|n|e|domain|tlsver|origtlsver|response|signature|notary_pubkey
-        audit_data = shared.bi2ba(tlsn_session.chosen_cipher_suite,fixed=2) # 2 bytes
+        audit_data = 'tlsnotary audit file\n\n'
+        audit_data += '\x00\x01' #2 version bytes
+        audit_data += shared.bi2ba(tlsn_session.chosen_cipher_suite,fixed=2) # 2 bytes
         audit_data += tlsn_session.client_random + tlsn_session.server_random # 64 bytes
         audit_data += tlsn_session.pms1 + pms2 #48 bytes
         audit_data += tlsn_session.server_mod_length #2 bytes
@@ -216,9 +218,16 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         audit_data += tlsn_session.server_name #variable; around 10 bytes
         audit_data += tlsn_session.tlsver #2 bytes
         audit_data += tlsn_session.initial_tlsver #2 bytes
-        audit_data += shared.bi2ba(len(response),fixed=4) #8 bytes
+        audit_data += shared.bi2ba(len(response),fixed=8) #8 bytes
         audit_data += response #note that it includes unexpected pre-request app data, 10s of kB
-        audit_data += signature #? bytes
+        IV = tlsn_session.IV_after_finished if tlsn_session.chosen_cipher_suite in [47,53] \
+                    else ''.join(map(chr,tlsn_session.IV_after_finished[0]))+\
+                    chr(tlsn_session.IV_after_finished[1])+chr(tlsn_session.IV_after_finished[2])
+        audit_data += shared.bi2ba(len(IV),fixed=2) #2 bytes
+        print ("appended to audited data for IV len: ", binascii.hexlify(shared.bi2ba(len(IV),fixed=2)))
+        audit_data += IV #16 bytes or 258 bytes for RC4.
+        audit_data += signature #2 + 2 + 32 + 2 + 33 bytes usually; r,s lengths encoded
+        audit_data += commit_hash #32 bytes sha256 hash
         with open(join(install_dir,"public.pem"),"rb") as f:
             audit_data += f.read()
         
