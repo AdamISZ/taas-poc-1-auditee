@@ -744,8 +744,7 @@ class TLSNClientSession(object):
         self.server_exponent = int(exponent)
         n = bi2ba(self.server_modulus)
         modulus_len_int = len(n)
-        self.server_mod_length = bi2ba(modulus_len_int)
-        if len(self.server_mod_length) == 1: self.server_mod_length.insert(0,0)  #zero-pad to 2 bytes
+        self.server_mod_length = bi2ba(modulus_len_int,fixed=2)
 
         return (self.server_modulus,self.server_exponent)  
         

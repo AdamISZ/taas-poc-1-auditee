@@ -192,37 +192,42 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         global audit_no
         audit_no += 1 #we want to increase only after server responded with data
         sf = str(audit_no)
-        for i in range (10):
-            try:
-                commit_hash, pms2, signature = commit_session(tlsn_session, response,sf)
-                print ('Got signature: ', binascii.hexlify(signature))
-                with open(join(current_session_dir,'sigfile'),'wb') as f:
-                    f.write(signature)
-                with open(join(current_session_dir,'commit_hash_pms2'),'wb') as f:
-                    f.write(commit_hash+pms2)
-                print ('Verifying against notary server pubkey...')
-                print ('Result of verification: ', 
-                       verify_data(join(current_session_dir,'commit_hash_pms2'),
-                                   join(current_session_dir,'sigfile')))
-                #now we know we have a valid audit, store it in a file
-                zipf = zipfile.ZipFile(join(current_session_dir, 'myaudit.zip'), 'w')
-                commit_dir = join(current_session_dir, 'commit')
-                com_dir_files = os.listdir(commit_dir)
-                for onefile in com_dir_files:
-                    if not onefile.startswith(('pms_ee','response', 'tlsver', 'origtlsver', 'domain','IV','cs','certificate.der')): continue
-                    zipf.write(join(commit_dir, onefile), onefile)
-                zipf.write(join(current_session_dir,'sigfile'), 'sigfile')
-                zipf.write(join(current_session_dir,'commit_hash_pms2'),'commit_hash_pms2')
-                zipf.close()
-                print ("**Your data has been successfully notarized! ",
-                "You can pass the file " , join(current_session_dir, "myaudit.zip"),
-                " to an auditor for verification.")
-                break
-            except Exception, e:
-                if i == 9:
-                    raise Exception('Audit failed')
-                print ('Exception caught while sending a commit to peer, retrying...', e)
-                continue
+
+        commit_hash, pms2, signature = commit_session(tlsn_session, response,sf)
+        print ('Got signature: ', binascii.hexlify(signature))
+        with open(join(current_session_dir,'sigfile'),'wb') as f:
+            f.write(signature)
+        with open(join(current_session_dir,'commit_hash_pms2'),'wb') as f:
+            f.write(commit_hash+pms2)
+        print ('Verifying against notary server pubkey...')
+        print ('Result of verification: ', 
+               verify_data(join(current_session_dir,'commit_hash_pms2'),
+                           join(current_session_dir,'sigfile')))
+        
+        #another option would be a fixed binary format for a *.audit file: 
+        #cs|cr|sr|pms1|pms2|n|e|domain|tlsver|origtlsver|response|signature|notary_pubkey
+        audit_data = shared.bi2ba(tlsn_session.chosen_cipher_suite,fixed=2) # 2 bytes
+        audit_data += tlsn_session.client_random + tlsn_session.server_random # 64 bytes
+        audit_data += tlsn_session.pms1 + pms2 #48 bytes
+        audit_data += tlsn_session.server_mod_length #2 bytes
+        audit_data += shared.bi2ba(tlsn_session.server_modulus) #256 bytes usually
+        audit_data += shared.bi2ba(tlsn_session.server_exponent, fixed=8) #8 bytes
+        audit_data += shared.bi2ba(len(tlsn_session.server_name),fixed=2)
+        audit_data += tlsn_session.server_name #variable; around 10 bytes
+        audit_data += tlsn_session.tlsver #2 bytes
+        audit_data += tlsn_session.initial_tlsver #2 bytes
+        audit_data += shared.bi2ba(len(response),fixed=4) #8 bytes
+        audit_data += response #note that it includes unexpected pre-request app data, 10s of kB
+        audit_data += signature #? bytes
+        with open(join(install_dir,"public.pem"),"rb") as f:
+            audit_data += f.read()
+        
+        with open(join(current_session_dir,"my.audit"),"wb") as f:
+            f.write(audit_data)
+            
+        print ("**Your data has been successfully notarized! ",
+        "You can pass the file " , join(current_session_dir, "my.audit"),
+        " to an auditor for verification.")
 
         rv = decrypt_html(pms2, tlsn_session, sf)
         if rv[0] == 'decrypt':
