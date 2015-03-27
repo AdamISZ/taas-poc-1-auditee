@@ -12,7 +12,7 @@ Once the audit completes OK (with sig verified), you'll be able to take the file
 move them around as you like; they're self-contained.
 
 The "someone else" (which can be you of course) can run:
-python src/auditee/tlsnotary-auditor.py <name of .audit file> to check if the audit is valid
+`python src/auditee/tlsnotary-auditor.py <name of .audit file>` to check if the audit is valid
 and, if so, to get the html and a domain file with the cert in hex to check against Firefox
 (see the instructions in auditor guide on main TLSNotary repo and note that a new, more effective
 certificate check is in the works.)
