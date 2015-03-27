@@ -71,7 +71,7 @@ def extract_audit_data(audit_filename):
         audit_data['IV'] = f.read(IV_len)
         sig_header = f.read(2)
         r_len_bytes = f.read(2)
-        if binascii.hexlify(sig_header) not in ['3045', '3044']:
+        if binascii.hexlify(sig_header[0]) != '30':
             print ("Sig starts with: ", binascii.hexlify(sig_header))
             raise Exception('Wrong signature format in audit file')
         r_len = shared.ba2int(r_len_bytes[1])
@@ -79,6 +79,11 @@ def extract_audit_data(audit_filename):
         s_len_bytes = f.read(2)
         s_len = shared.ba2int(s_len_bytes[1])
         s = f.read(s_len)
+        #check header length
+        header_len = shared.ba2int(sig_header[1])
+        if header_len != r_len + s_len + 4: #4 extra bytes for r and s headers
+            print ("Header len, r len and s len were: ", header_len, r_len, s_len)
+            raise Exception("Wrong signature format in audit file")
         audit_data['signature'] = sig_header + r_len_bytes + r + s_len_bytes + s
         audit_data['commit_hash'] = f.read(32)
         audit_data['pubkey_pem'] = f.read()

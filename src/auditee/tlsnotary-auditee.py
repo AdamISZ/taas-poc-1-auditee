@@ -224,7 +224,6 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
                     else ''.join(map(chr,tlsn_session.IV_after_finished[0]))+\
                     chr(tlsn_session.IV_after_finished[1])+chr(tlsn_session.IV_after_finished[2])
         audit_data += shared.bi2ba(len(IV),fixed=2) #2 bytes
-        print ("appended to audited data for IV len: ", binascii.hexlify(shared.bi2ba(len(IV),fixed=2)))
         audit_data += IV #16 bytes or 258 bytes for RC4.
         audit_data += signature #2 + 2 + 32 + 2 + 33 bytes usually; r,s lengths encoded
         audit_data += commit_hash #32 bytes sha256 hash
