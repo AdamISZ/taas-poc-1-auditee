@@ -175,9 +175,6 @@ if __name__ == "__main__":
     with open(join(current_session_dir,'audited.html'),'wb') as f:
         f.write(plaintext)
     #print out the info about the domain
-    write_data = audit_data['server_name'] + '\n\n'
-    write_data += 'Server '
-    
     n_hexlified = binascii.hexlify(shared.bi2ba(audit_data['server_modulus']))
     #pubkey in the format 09 56 23 ....
     n_write = " ".join(n_hexlified[i:i+2] for i in range(0, len(n_hexlified), 2))
