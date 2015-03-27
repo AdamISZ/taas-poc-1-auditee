@@ -234,7 +234,7 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
             f.write(audit_data)
             
         print ("\n\n AUDIT SUCCEEDED. \n ",
-        "You can pass the file " , join(current_session_dir, "my.audit"),
+        "You can pass the file(s) " , join(current_session_dir, "1.audit (and 2.audit etc. if they exist)"),
         " to an auditor for verification.")
 
         rv = decrypt_html(pms2, tlsn_session, sf)
