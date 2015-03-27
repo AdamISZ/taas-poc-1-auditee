@@ -195,15 +195,15 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
         commit_hash, pms2, signature = commit_session(tlsn_session, response,sf)
         print ('Got signature: ', binascii.hexlify(signature))
-        with open(join(current_session_dir,'sigfile'),'wb') as f:
+        with open(join(current_session_dir,'sigfile'+sf),'wb') as f:
             f.write(signature)
-        with open(join(current_session_dir,'commit_hash_pms2_servermod'),'wb') as f:
+        with open(join(current_session_dir,'commit_hash_pms2_servermod'+sf),'wb') as f:
             f.write(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus))
         print ('Verifying against notary server pubkey...')
-        print ('Result of verification: ', 
-               verify_data(join(current_session_dir,'commit_hash_pms2_servermod'),
-                           join(current_session_dir,'sigfile')))
-        
+        if 'Verified OK' not in  verify_data(join(current_session_dir,'commit_hash_pms2_servermod'+sf),
+                           join(current_session_dir,'sigfile'+sf)):
+            raise Exception("Audit FAILED, notary signature invalid.")
+        print ('Verified OK')
         #another option would be a fixed binary format for a *.audit file: 
         #cs|cr|sr|pms1|pms2|n|e|domain|tlsver|origtlsver|response|signature|notary_pubkey
         audit_data = 'tlsnotary audit file\n\n'
@@ -230,10 +230,10 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         with open(join(install_dir,"public.pem"),"rb") as f:
             audit_data += f.read()
         
-        with open(join(current_session_dir,"my.audit"),"wb") as f:
+        with open(join(current_session_dir,sf+".audit"),"wb") as f:
             f.write(audit_data)
             
-        print ("**Your data has been successfully notarized! ",
+        print ("\n\n AUDIT SUCCEEDED. \n ",
         "You can pass the file " , join(current_session_dir, "my.audit"),
         " to an auditor for verification.")
 
@@ -269,26 +269,6 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         rv = decrypt_html_stage2(plaintext, tlsn_session, sf)
         self.respond({'response':'cleartext', 'status':'success', 'next_action':'audit_finished', 'argument':b64encode(rv[1])})        
 
-    def get_advanced(self):
-        self.respond({'irc_server':shared.config.get('Notary','server_name'),
-                      'channel_name':shared.config.get('Notary','server_name'),'irc_port':shared.config.get('Notary','server_port')})
-        return        
-
-    def set_advanced(self, args):
-        args = args.split(',')
-        #TODO can make this more generic when there are lots of arguments;
-        if not (args[0].split('=')[0] == 'server_val' and args[1].split('=')[0] == 'channel_val' \
-                and args[2].split('=')[0] == 'port_val' and args[0].split('=')[1] and \
-                args[1].split('=')[1] and args[2].split('=')[1]):
-            print ('Failed to reset the irc config. Server was:',args[0].split('=')[1], \
-                   ' and channel was: ', args[1].split('=')[1])
-            return
-        shared.config.set('Notary','server_name',args[0].split('=')[1])
-        shared.config.set('Notary','server_name',args[1].split('=')[1])
-        shared.config.set('Notary','server_port',args[2].split('=')[1])
-        with open(shared.config_location,'wb') as f: shared.config.write(f)
-        return        
-
     def do_HEAD(self):
         request = self.path
         print ('browser sent ' + request[:80] + '... request',end='\r\n')
@@ -298,10 +278,6 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
             suspended_session  = self.get_certificate(request.split('?', 1)[1])
         elif request.startswith('/start_audit'):
             self.start_audit(request.split('?', 1)[1])
-        elif request.startswith('/get_advanced'):
-            self.get_advanced()
-        elif request.startswith('/set_advanced'):
-            self.set_advanced(request.split('?', 1)[1]) 
         elif request.startswith('/cleartext'):
             self.process_cleartext(request.split('?', 1)[1])   
         else:

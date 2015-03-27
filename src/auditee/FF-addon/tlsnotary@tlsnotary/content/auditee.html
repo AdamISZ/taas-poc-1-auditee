@@ -8,154 +8,31 @@
 
 <body onload="homepageLoaded()">
 
-<div align="right">
-	
-	<div class="btn-group" data-toggle="buttons">
-  <label class="btn btn-primary">
-    <input type="radio" name="options" id="option1" onclick="normalMode()">Normal mode
-  </label>
-  <label class="btn btn-primary">
-    <input type="radio" name="options" id="option2" onclick="selftestMode()" checked="checked">Selftest mode
-  </label>
-  <label class="btn btn-primary">
-    <input type="radio" name="options" id="option3" onclick="advancedMode()">Advanced
-  </label>
-	</div>
-
-</div>
-
-
-<div id="selftest_screen" class="hero-unit">
-	<ul>
-	<li>You are running TLSNotary in a selftest mode.</li>
-	<li>This mode is useful to determine if your website is compatible with TLSNotary</li>
-	<li>Press "Start selftest" and follow the prompt on the statusbar below</li>
-	</ul>
-	<table>
-	<tr>
-	<td>
-	<button id="selftest_button" autofocus="autofocus" class="btn btn-primary btn-lg" style="width:100%;" onclick="startSelftest()">Start selftest</button>		
-	</td>
-	</tr>
-	<tr>
-	<td>
-	<progress id="progress_bar_selftest" value="0" max="100" style="visibility:hidden"></progress>
-	</td>
-	</tr>
-	</table>
-</div>
-
-
-<div id="advanced_screen" class="hero-unit">
-
-        <p>Only change these settings by negotiation with your auditor.</p>
-        <p>If you are unsure, don't change anything and return to 'self-test' or 'normal'.</p>
-        <div>
-                <p>IRC server</p>
-                <textarea id="textarea_ircserver" cols="40" rows="1" type="text" name="irc_server" style="width:40%;resize:none;" autocomplete="off">chat.freenode.net</textarea>
-        </div>
-        <div>
-                <p>IRC port</p>
-                <textarea id="textarea_ircport" cols="10" rows="1" type="text" name="irc_port" style="width:40%;resize:none;" autocomplete="off">6667</textarea>
-        </div>
-        <div>
-                <p>IRC channel name (omit '#')</p>
-                <textarea id="textarea_ircchannel" cols="40" rows="1" type="text" name="irc_channel" style="width:40%;resize:none;" autocomplete="off">tlsnotary</textarea>
-        </div>
-        <table>
-        <tr>
-        <td>
-        <button id="update_advanced" autofocus="autofocus" class="btn btn-primary btn-lg" style="width:100%;" onclick="advancedUpdate()">Update</button>
-        </td>
-        </tr>
-        </table>
-</div>
-
 <div id="normal_screen" class="hero-unit" style="margin-top:0;margin-bottom:0";>
-	<p  style="margin-left:0;margin-bottom:0;margin-top:-3%;">In order to be audited please do the following.
+	<p  style="margin-left:0;margin-bottom:0;margin-top:-3%;">
+	Welcome to TLSNotary. You can use Firefox in the normal way.
 	</p>
-	<ul>
-	<li>Give the auditor your key</li>
-	<li>Paste the Auditor's key</li>
-	<li>Wait for the auditor to inform you that they are ready to audit you</li>
-	<li>Press "Connect"</li>
-	</ul>
-
-	<table>
-	<tr>
-	<td>
-	<button id="start_button" autofocus="autofocus" class="btn btn-primary btn-lg" style="width:100%;" onclick="startPressed()">Connect</button>
-	</td>
-	</tr>
-	<tr>
-	<td>
-	<progress id="progress_bar" value="0" max="100" style="visibility:hidden"></progress>
-	</td>
-	</tr>
-	</table>
-
-	<div id="key_area">
-		
-		<table style="width:80%">
-			<tr>
-				<td>
-					<p>Your key:</p>
-				</td>
-				<td style="text-align:right;">
-					<a id="new_keypair" href="#" onclick="newKeypair();"><h6>Expert only: generate a new key</h6></a>
-					<h6 id="generating_cell">Generating...</h6>
-				</td>
-			</tr>
-			<tr>
-				<td colspan="2">	
-					<textarea id="textarea_mykey" cols="40" rows="2" type="text" name="key" style="width:100%;resize:none;" autocomplete="off" oninput="inputReceived()" readonly>
-					</textarea>
-				</td>
-			</tr>
-		</table>
-			
-		<div>
-			<p>Auditor's key:</p>
-			<textarea id="textarea_auditorkey" cols="40" rows="2" type="text" name="key" style="width:80%;resize:none;" autocomplete="off" oninput="inputReceived()">
-			</textarea>
-		</div>
-
-	</div>
+	<p> When you reach a page that you want to audit, click the TLSNotary button on the top right.
+	</p>
+	<p> Wait 5-20 seconds until a new tab appears. That should contain the audited version of your page.
+	</p>
+	<p>Then, look at the terminal screen. If all is well, you will see an AUDIT SUCCEEDED message there.
+	</p>
+	<p>In this case, the terminal will also let you know the location of the .audit file that
+	you can use as proof.
+	</p>
+	<p>Don't forget to log out of any sites that you audit, before sending the audit file.
+	</p>
+	<p>Also note that the html can be extraced from the .audit file, so if that information is sensitive, then 
+	send the .audit file securely. Happy notarizing!
+	</p>	
 </div>
-
-
 
 <script>
 const Ci = Components.interfaces;
 const Cc = Components.classes;
 var port;
-var bGetAdvancedResponded = false;
-var bStartPCResponded = false;
-var reqStartPC;
-var mode = 0; //0 - test mode, 1 - normal mode
 
-
-function selftestMode(){
-	mode = 0;
-        toggleDisplay("selftest_screen");
-}
-
-function normalMode(){
-	mode = 1;
-        toggleDisplay("normal_screen");
-}
-
-function advancedMode(){
-        toggleDisplay("advanced_screen");
-}
-
-function toggleDisplay(tabChoice){
-    document.getElementById("normal_screen").style.display="none";
-    document.getElementById("selftest_screen").style.display="none";
-    document.getElementById("generating_cell").style.display = "none";
-    document.getElementById("advanced_screen").style.display = "none";
-    document.getElementById(tabChoice).style.display = "";
-}
 
 function setError(errortext){
 	Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment).set("TLSNOTARY_ERROR", errortext);	
@@ -165,152 +42,15 @@ function setError(errortext){
 	alert(errortext);
 }
 
-function inputReceived(){
-    var start_button = document.getElementById("start_button");
-    var input_fields = document.getElementsByName("key");
-    for (var i = 0; i < input_fields.length; i++) {
-        if (input_fields[i].value == ""){
-            start_button.setAttribute("disabled", "true");
-            return;
-        }
-    }
-    //activate the button only when all fields contain some text
-    start_button.removeAttribute("disabled");
-}
-
-function advancedUpdate(){
-    var server_val = document.getElementById("textarea_ircserver").value.trim();
-    var channel_val = document.getElementById("textarea_ircchannel").value.trim();
-    var port_val = document.getElementById("textarea_ircport").value.trim();
-
-    if (server_val == "" || channel_val == "" || port_val == ""){
-        alert("All settings are mandatory");
-        return;
-    }
-
-    if (channel_val.startsWith("#")){
-        alert("Omit # from channel name");
-        document.getElementById("textarea_ircchannel").value = channel_val.substr(1);
-        return;
-    }
-
-    var intTest = /^-?(\d+|0)$/;
-    if (!(intTest.test(port_val)) || port_val < 0 || port_val > 65535){
-        alert("You must enter a valid port - an integer between 0 and 65535");
-        return;
-    }
-
-    reqAdvancedUpdate = new XMLHttpRequest();
-    //not setting a response 'onload' because: the backend is not given
-    //any choice on how to respond; if it fails to respond other error messages will
-    //pick that up anyway.
-
-    reqAdvancedUpdate.open("HEAD", "http://127.0.0.1:"+port+"/set_advanced?server_val="+server_val+",channel_val="+channel_val+",port_val="+port_val, true);
-    reqAdvancedUpdate.send();
-}
-
-var first_load = true;
 function homepageLoaded () {
-	if (first_load){
-		selftestMode();
-		first_load = false;
-	}
+	
 	//wait for python backend to start
 	port = Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment).get("FF_to_backend_port");
 	if (port == ""){
 		setTimeout(homepageLoaded, 1000);
 		return;
 	}
-    reqGetAdvanced = new XMLHttpRequest();
-    reqGetAdvanced.onload = responseGetAdvanced;
-    reqGetAdvanced.open("HEAD","http://127.0.0.1:"+port+"/get_advanced",true);
-    reqGetAdvanced.send();
-    responseGetAdvanced(0);
-
 }
-
-function responseGetAdvanced(iteration){
-    if (typeof iteration == "number"){
-        if (iteration > 5){setError("ERROR responseGetAdvanced timed out");return;}
-        if (!bGetAdvancedResponded){ setTimeout(responseGetAdvanced, 1000, ++iteration); }
-        return;
-    }
-    bGetAdvancedResponded = true;
-    document.getElementById("textarea_ircserver").value = reqGetAdvanced.getResponseHeader("irc_server");
-    document.getElementById("textarea_ircchannel").value = reqGetAdvanced.getResponseHeader("channel_name");
-    document.getElementById("textarea_ircport").value = reqGetAdvanced.getResponseHeader("irc_port");
-}
-
-function startPressed(){
-    startPC();
-}
-
-function progressBar(){
-	var progress_bar = document.getElementById("progress_bar");
-	var progress_bar_selftest = document.getElementById("progress_bar_selftest");
-	if (mode == 1) { 
-		if (progress_bar.value >= 100){return;} 
-		progress_bar.value += 2;
-	}
-	if (mode == 0) { 
-		if (progress_bar_selftest.value >= 100){return;} 
-		progress_bar_selftest.value += 1;
-	}
-	setTimeout(progressBar, 400);
-
-}
-
-function responseSelfTest(iteration){
-
-	if (typeof iteration == "number"){
-		if (iteration > 20){setError("ERROR responseSelfTest timed out");return;}
-		if (!bSelfTestResponded) setTimeout(responseSelfTest, 1000, ++iteration)
-		return;
-	}
-	//else: not a timeout but a response from the server
-	bSelfTestResponded = true;
-	var query = reqSelfTest.getResponseHeader("response");
-	var status = reqSelfTest.getResponseHeader("status");
-	if (query != "selftest"){setError("ERROR Internal error. Wrong response header" + query);return;}
-	if (status != "success"){setError("ERROR Received an error message");return;}
-	
-	//else successful response
-	Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment).set("TLSNOTARY_MSG", "Please wait. Connecting auditee (2/2)");
-        startPC();
-}
-
-function startPC(){
-	alert("Start PC called")
-	if (mode == 1) {
-		setTimeout(progressBar, 1);
-		var button_start_button = document.getElementById("start_button");
-		var button_new_keypair = document.getElementById("new_keypair");
-		var progress_bar = document.getElementById("progress_bar");
-		progress_bar.style.visibility = "visible";
-		var stbutton = document.getElementById("option2")
-		stbutton.setAttribute("disabled","true");
-		var advbutton = document.getElementById("option3");
-		advbutton.setAttribute("disabled","true");
-		button_start_button.setAttribute("disabled", "true");
-		button_new_keypair.setAttribute("disabled", "true");
-		progress_bar.setAttribute("disabled", "true");
-	}
-
-    responseStartPC(0);
-}
-
-function responseStartPC(iteration){
-   
-	//else successful response
-	document.getElementById("progress_bar").value = 100;
-	document.getElementById("progress_bar_selftest").value = 100;
-	//inform the addon. We use env var as IPC
-	//NB: we can set envvar from this JS code only because this file is part of the addon
-	//When debugging this file by simple loading into the browser, we won't be able to access env vars
-	Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment).set("TLSNOTARY_IRC_STARTED", "true"+mode);	 
-
-}
-
 </script>
 
 <script src="jquery-2.0.3.min.js"></script>

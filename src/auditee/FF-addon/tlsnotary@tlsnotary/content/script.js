@@ -110,27 +110,13 @@ function popupShow(text) {
 	);
 }
 
-/*Show the notification with default buttons (usebutton undefined), 'AUDIT' and 'FINISH'
-or with just the AUDIT button (usebutton true or truthy) or no buttons (usebutton false) */
+/*Show the notification with default button (usebutton undefined or true), 'AUDIT' 
+or no buttons (usebutton false) */
 function notBarShow(text,usebutton){
     var _gNB = win.document.getElementById("global-notificationbox"); //global notification box area
     _gNB.removeAllNotifications();
     var buttons;
-    if (typeof(usebutton)==='undefined'){
-    //Default: show both buttons
-	buttons = [{
-	    label: 'AUDIT THIS PAGE',
-	    popup: null,
-	    callback: startRecording
-	},
-	{
-	    label: 'FINISH',
-	    accessKey: null,
-	    popup: null,
-	    callback: stopRecording
-	    }];
-    }
-    else if (usebutton===false){
+    if (usebutton===false){
 	buttons = null;
     }
     else{
@@ -159,7 +145,7 @@ function pollEnvvar(){
 	}
 	//else if envvar was set, init all global vars
 	
-	popupShow("The connection to the auditor has been established. You may now open a new tab and go to a webpage. Please follow the instructions on the status bar below.");
+	popupShow("TLSNotary is installed.");
 	notBarShow("Go to a page and press AUDIT THIS PAGE. Then wait for the page to reload automatically.",true);
 }
 
@@ -181,14 +167,8 @@ function startRecording(){
     sanitized_url = tab_url_full.split("#")[0];
     
     if (!sanitized_url.startsWith("https://")){
-	var btn = win.document.getElementsByAttribute("label","FINISH")[0]; //global notification box area
 	errmsg="ERROR You can only audit pages which start with https://";
-	if (typeof(btn)==='undefined'){
-	    notBarShow(errmsg,true);
-	}
-	else{
-	    notBarShow(errmsg);
-	}
+	notBarShow(errmsg);
 	return;
     }
     if (dict_of_status[sanitized_url] != "secure"){
@@ -324,7 +304,7 @@ function getModulus(certBase64){
 
 
 function startAudit(server_modulus){
-    notBarShow("Audit is underway, please be patient.",false);    
+    notBarShow("Audit is underway...",false);    
     var ciphersuite = ''
     if (testingMode == true){
 		ciphersuite = current_ciphersuite; //<-- global var from testdriver_script.js
@@ -359,7 +339,7 @@ function process_audit_finished(args){
 		let html_path = atob(b64_html_path);
 		go_offline_for_a_moment(); //prevents loading images from cache
 		gBrowser.getBrowserForTab(gBrowser.addTab(html_path));
-		notBarShow("Page decryption successful. Press FINISH or go to another page and press AUDIT THIS PAGE");
+		notBarShow("Page decryption successful. Go to another page and press AUDIT THIS PAGE");
 	}
 	else if (next_action == "decrypt"){
 		var b64cleartext = aes_decrypt(arg);  
