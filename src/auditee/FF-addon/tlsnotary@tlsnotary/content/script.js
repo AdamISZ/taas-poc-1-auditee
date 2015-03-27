@@ -264,6 +264,7 @@ function process_certificate(args){
 	let certBase64 = args[0]
 	if (! verifyCert(certBase64)){
 		alert("This website cannot be audited by TLSNotary because it presented an untrusted certificate");
+		notBarShow("Go to a page and press AUDIT THIS PAGE. Then wait for the page to reload automatically.",true);
 		return;
 	}
 	else {
@@ -350,25 +351,11 @@ function process_audit_finished(args){
 	}
 }
 
-
 function go_offline_for_a_moment(){
 	win.document.getElementById("goOfflineMenuitem").doCommand()
 	setTimeout(function(){
 			win.document.getElementById("goOfflineMenuitem").doCommand()
 		}, 1000)
-}
-
-function stopRecording(){
-	var timeout = 100;
-	if (testingMode) timeout = 2000;
-	send("stop_recording", [], ["session_path"], timeout, process_stop)
-}
-
-function process_stop(args){
-    let session_path = args[0]; //Not in use - contains path to the session files
-	popupShow("Congratulations. The auditor has acknowledged successful receipt of your audit data. You may now close the browser");
-	notBarShow("Auditing session ended successfully",false);
-	return;
 }
 
 function dumpSecurityInfo(channel,urldata) {
