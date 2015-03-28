@@ -532,19 +532,20 @@ def start_firefox(FF_to_backend_port, firefox_install_path):
     if not os.path.exists(extension_path):
         shutil.copytree(join(data_dir, 'FF-addon', 'tlsnotary@tlsnotary'),extension_path)
 
-    #Disable addon compatibility check on startup
-    try:
-        application_ini_data = None
-        with open(join(firefox_install_path, 'application.ini'), 'r') as f: application_ini_data = f.read()
-        version_pos = application_ini_data.find('Version=')+len('Version=')
-        #version string can be 34.0 or 34.0.5
-        version_raw = application_ini_data[version_pos:version_pos+8]
-        version = ''.join(char for char in version_raw if char in '1234567890.')
-
-        with open(join(ffprof_dir, 'prefs.js'), 'a') as f:
-            f.write('user_pref("extensions.lastAppVersion", "' + version + '"); ')
-    except:
-        print ('Failed to disable add-on compatibility check')
+    #Disable addon compatibility check on startup (note: disabled for MacOS)
+    if OS != 'macos':
+        try:
+            application_ini_data = None
+            with open(join(firefox_install_path, 'application.ini'), 'r') as f: application_ini_data = f.read()
+            version_pos = application_ini_data.find('Version=')+len('Version=')
+            #version string can be 34.0 or 34.0.5
+            version_raw = application_ini_data[version_pos:version_pos+8]
+            version = ''.join(char for char in version_raw if char in '1234567890.')
+    
+            with open(join(ffprof_dir, 'prefs.js'), 'a') as f:
+                f.write('user_pref("extensions.lastAppVersion", "' + version + '"); ')
+        except:
+            print ('Failed to disable add-on compatibility check')
 
     os.putenv('FF_to_backend_port', str(FF_to_backend_port))
     os.putenv('FF_first_window', 'true')   #prevents addon confusion when websites open multiple FF windows
