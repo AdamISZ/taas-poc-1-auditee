@@ -636,7 +636,6 @@ if __name__ == "__main__":
     import shared
     shared.load_program_config()
     shared.import_reliable_sites(join(install_dir,'src','shared'))
-    global hcts
     hcts = httplib.HTTPConnection(shared.config.get("Notary","server_name")\
                                   +":"+shared.config.get("Notary","server_port"))
     #override default config values
