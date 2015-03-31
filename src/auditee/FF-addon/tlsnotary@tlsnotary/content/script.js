@@ -322,7 +322,7 @@ function verifyCert(certBase64){
 	let certdb = Cc[nsX509CertDB].getService(nsIX509CertDB);
 	let cert = certdb.constructX509FromBase64(certBase64);
 	let a = {}, b = {};
-	let retval = certdb.verifyCertNow(cert, nsIX509Cert.CERT_USAGE_SSLServer, nsIX509CertDB.FLAG_LOCAL_ONLY, a, b);
+	let retval = certdb.verifyCertNow(cert, nsIX509Cert.CERT_USAGE_SSLServerWithStepUp, nsIX509CertDB.FLAG_LOCAL_ONLY, a, b);
 	if (retval == 0){
 		//success
 		return true;
