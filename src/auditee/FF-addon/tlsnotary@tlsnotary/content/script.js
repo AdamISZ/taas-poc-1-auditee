@@ -51,6 +51,8 @@ function init(){
 	atob = win.atob;
 	alert = win.alert;
 	
+	check_addon_mode();
+	
 	//start waiting
 	
 	setTimeout(startListening,500);
@@ -75,6 +77,64 @@ var process;
 var py_exe;
 var auditee_py;
 var arguments;
+
+function check_addon_mode(){
+	//**** get profile folder path ****
+	dsprops = Cc['@mozilla.org/file/directory_service;1'].getService(Ci.nsIProperties);
+	ProfilePath = dsprops.get("ProfD", Ci.nsIFile).path;
+	//**** initialize file ****
+	profile_dir = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+	profile_dir.initWithPath(ProfilePath);
+	//**** append each step in the path ****
+	py_dir = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+	portsfile = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+	src_dir = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+	src_dir.initWithPath(ProfilePath);
+	src_dir.append("extensions");
+	src_dir.append("tlsnotary@tlsnotary");
+	src_dir.append("src");
+	if (src_dir.exists()){
+		filesdir = profile_dir.clone();
+		filesdir.append("tlsnotary_files");
+		py_dir = filesdir.clone();
+		py_dir.append("Python27");
+		var os = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime).OS;
+		process = Cc['@mozilla.org/process/util;1'].getService(Ci.nsIProcess);
+		py_exe = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+		if (os == "WINNT"){
+			py_exe = py_dir.clone();
+			py_exe.append("python.exe");
+		}
+		else if (os == "Darwin"){
+			py_exe.initWithPath("/Library/Frameworks/Python.framework/Verions/2.7/bin/python");
+		}
+		else {
+			py_exe.initWithPath("/usr/bin/python");
+		}
+		process.init(py_exe);
+		auditee_py = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsILocalFile);
+		auditee_py = filesdir.clone();
+		auditee_py.append("src");
+		auditee_py.append("auditee");
+		auditee_py.append("tlsnotary-auditee.py");
+		arguments= [auditee_py.path,"mode=addon"] ; // command line arguments array
+		portsfile.initWithPath(filesdir.path);
+		portsfile.append("src");
+		portsfile.append("auditee");
+		portsfile.append("ports");
+		//python will create these files
+		if (portsfile.exists()){
+			portsfile.remove(false);
+		}
+		process.run(false, arguments, arguments.length);
+		//cannot use win.setTimeout, so using FF's built-in
+		//let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+		//timer.initWithCallback({ notify: checkports }, 1000, Ci.nsITimer.TYPE_ONE_SHOT);
+		setTimeout(checkports, 1000);
+		Cc["@mozilla.org/process/environment;1"].getService(Ci.nsIEnvironment).set("TLSNOTARY_ADDON_MODE", "true");
+	}
+}
+
 var ports_str;
 var fstream;
 var sstream;

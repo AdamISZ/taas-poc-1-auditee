@@ -45,9 +45,6 @@ global_use_slowaes = False
 global_use_paillier = False
 hcts = None #an http connection to notary
 
-def verify_data(data_to_be_verified, signature):
-    return check_output(['openssl','dgst','-ecdsa-with-SHA1',
-                        '-verify','public.pem','-signature',signature, data_to_be_verified])
 
 #Receive AES cleartext and send ciphertext to browser
 class HandlerClass_aes(SimpleHTTPServer.SimpleHTTPRequestHandler):
@@ -199,9 +196,12 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
             f.write(signature)
         with open(join(current_session_dir,'commit_hash_pms2_servermod'+sf),'wb') as f:
             f.write(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus))
+        #create temporary file containing hash of message (called the 'digest')
+        with open(join(current_session_dir,'commit_digest'+sf),'wb') as f:
+            f.write(sha256(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus)).digest())
         print ('Verifying against notary server pubkey...')
-        if 'Verified OK' not in  verify_data(join(current_session_dir,'commit_hash_pms2_servermod'+sf),
-                           join(current_session_dir,'sigfile'+sf)):
+        if  not shared.verify_data(join(current_session_dir,'commit_digest'+sf),
+                           join(current_session_dir,'sigfile'+sf), join(install_dir,'public.pem')):
             raise Exception("Audit FAILED, notary signature invalid.")
         print ('Verified OK')
         #another option would be a fixed binary format for a *.audit file: 
@@ -225,7 +225,7 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
                     chr(tlsn_session.IV_after_finished[1])+chr(tlsn_session.IV_after_finished[2])
         audit_data += shared.bi2ba(len(IV),fixed=2) #2 bytes
         audit_data += IV #16 bytes or 258 bytes for RC4.
-        audit_data += signature #2 + 2 + 32 + 2 + 33 bytes usually; r,s lengths encoded
+        audit_data += signature #512 bytes RSA PKCS 1 v1.5 padding
         audit_data += commit_hash #32 bytes sha256 hash
         with open(join(install_dir,"public.pem"),"rb") as f:
             audit_data += f.read()

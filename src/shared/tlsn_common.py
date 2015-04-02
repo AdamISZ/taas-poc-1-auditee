@@ -5,6 +5,7 @@ from struct import pack
 import os, binascii, itertools, re, random
 import threading, BaseHTTPServer
 import select, time, socket
+from subprocess import check_output
 #General utility objects used by both auditor and auditee.
 
 config = SafeConfigParser()
@@ -15,7 +16,16 @@ required_options = {}
 reliable_sites = {}
 smallprimes = (2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59,61,67,71,73,79,83,89,97,101)            
 
-    
+
+def verify_data(data_to_be_verified, signature, pubkey):
+    retval = check_output(['openssl','rsautl',
+            '-verify', '-in', signature, '-inkey', pubkey, '-pubin'])
+    with open(data_to_be_verified,'rb') as f:
+        dtbv = f.read()
+    os.remove(data_to_be_verified)
+    os.remove(signature)    
+    return dtbv == retval
+
 #file transfer functions - currently only used for sending
 #ciphertext to auditor
 def sendspace_getlink(mfile,rg,rp):
