@@ -57,7 +57,7 @@ def extract_audit_data(audit_filename):
         response_len = shared.ba2int(f.read(8))
         audit_data['response'] = f.read(response_len)
         IV_len = shared.ba2int(f.read(2))
-        if IV_len not in [260,16]:
+        if IV_len not in [258,16]:
             print ("IV length was: ", IV_len)
             raise Exception("Wrong IV format in audit file")
         audit_data['IV'] = f.read(IV_len)

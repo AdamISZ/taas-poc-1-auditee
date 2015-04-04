@@ -425,6 +425,8 @@ class TLSConnectionState(object):
     def rc4_dm(self,ciphertext, rec_type, return_mac=False):
         #decrypt
         plaintext, self.IV = rc4_crypt(bytearray(ciphertext),self.enc_key,self.IV)
+        if return_mac:
+            print ('IV inside rc4dm: ', self.IV)
         #mac check
         return self.verify_mac(plaintext, rec_type,return_mac)  
         
@@ -1107,7 +1109,8 @@ def rc4_crypt(data, key, state=None):
     return (''.join(out), out_state )
 
 def rc4_state_to_bytearray(state):
-    box,x,y = state
+    box = state[0][:]
+    x,y = state[1:3]
     box.extend([x,y])
     return bytearray('').join(map(chr,box))
     

@@ -191,7 +191,6 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         sf = str(audit_no)
 
         commit_hash, pms2, signature = commit_session(tlsn_session, response,sf)
-        print ('Got signature: ', binascii.hexlify(signature))
         with open(join(current_session_dir,'sigfile'+sf),'wb') as f:
             f.write(signature)
         with open(join(current_session_dir,'commit_hash_pms2_servermod'+sf),'wb') as f:
@@ -221,8 +220,7 @@ class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
         audit_data += shared.bi2ba(len(response),fixed=8) #8 bytes
         audit_data += response #note that it includes unexpected pre-request app data, 10s of kB
         IV = tlsn_session.IV_after_finished if tlsn_session.chosen_cipher_suite in [47,53] \
-                    else ''.join(map(chr,tlsn_session.IV_after_finished[0]))+\
-                    chr(tlsn_session.IV_after_finished[1])+chr(tlsn_session.IV_after_finished[2])
+                    else shared.rc4_state_to_bytearray(tlsn_session.IV_after_finished)
         audit_data += shared.bi2ba(len(IV),fixed=2) #2 bytes
         audit_data += IV #16 bytes or 258 bytes for RC4.
         audit_data += signature #512 bytes RSA PKCS 1 v1.5 padding
