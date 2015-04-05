@@ -28,12 +28,7 @@ elif m_platform == 'Linux': OS = 'linux'
 elif m_platform == 'Darwin': OS = 'macos'
 
 #Globals
-recv_queue = Queue.Queue() #all messages from the auditor are placed here by receiving_thread
-ack_queue = Queue.Queue() #ack numbers are placed here
-b_peer_connected = False #toggled to True when p2p connection is establishe
-auditor_nick = '' #we learn auditor's nick as soon as we get a ao_hello signed by the auditor
-my_nick = '' #our nick is randomly generated on connection
-my_prv_key = my_pub_key = auditor_pub_key = None
+my_id = binascii.hexlify(os.urandom(3))
 firefox_pid = selftest_pid = 0
 audit_no = 0 #we may be auditing multiple URLs. This var keeps track of how many
 #successful audits there were so far and is used to index html files audited.
@@ -340,7 +335,7 @@ def prepare_pms(tlsn_session):
                      'it may have expired.')
 
 def send_and_recv (hdr, dat,timeout=5):
-    rqstring = '/'+hdr+':'+b64encode(dat)
+    rqstring = '/'+ my_id + hdr+':' + b64encode(dat)
     hcts.request("HEAD", rqstring)
     response = hcts.getresponse() 
     received_hdr, received_dat = (response.getheader('response'),response.getheader('data'))
