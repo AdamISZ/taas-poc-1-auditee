@@ -98,7 +98,6 @@ def start_audit(server_name, headers, server_modulus):
     
     msg = sha256(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus)).digest()
     oracle_int_modulus = shared.ba2int(bytearray('').join(map(chr,oracle_modulus)))
-    print ('oracle int mod: ', oracle_int_modulus)
     if not shared.verify_signature(msg, signature, shared.ba2int(bytearray('').join(map(chr,oracle_modulus)))):
         raise Exception("Audit FAILED, notary signature invalid.")
     
@@ -337,14 +336,6 @@ def first_run_check(modname,modhash):
         tar.close()
 
 if __name__ == "__main__":
-    if ('test' in sys.argv): testing = True
-    if ('randomtest' in sys.argv): 
-        testing = True
-        randomtest = True
-    if ('mode=addon' in sys.argv): 
-        mode='addon'
-    else:
-        mode='normal'
     #for md5 hash, see https://pypi.python.org/pypi/<module name>/<module version>
     modules_to_load = {'rsa-3.1.4':'b6b1c80e1931d4eba8538fd5d4de1355',\
                        'pyasn1-0.1.7':'2cbd80fcd4c7b1c82180d3d76fee18c8',\

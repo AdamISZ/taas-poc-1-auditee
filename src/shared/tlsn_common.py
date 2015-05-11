@@ -25,8 +25,6 @@ def verify_signature(msg, signature, modulus):
     result = pow(sig,exponent,modulus)
     padded_hash = bi2ba(result,fixed=512) #4096 bit key
     unpadded_hash = padded_hash[512-32:]
-    print ('msg is: ', msg)
-    print ('unpadded hash is: ', unpadded_hash)
     if msg==unpadded_hash:
 	return True
     else:
