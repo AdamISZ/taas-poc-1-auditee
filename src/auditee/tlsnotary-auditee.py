@@ -8,7 +8,7 @@ from subprocess import Popen, check_output
 import binascii, hmac, os, platform,  tarfile
 import Queue, random, re, shutil, signal, sys, time
 import SimpleHTTPServer, socket, threading, zipfile
-import httplib
+import string
 try: import wingdbstub
 except: pass
 
@@ -21,271 +21,124 @@ time_str = time.strftime('%d-%b-%Y-%H-%M-%S', time.gmtime())
 current_session_dir = join(sessions_dir, time_str)
 os.makedirs(current_session_dir)
 
-#OS detection
-m_platform = platform.system()
-if m_platform == 'Windows': OS = 'mswin'
-elif m_platform == 'Linux': OS = 'linux'
-elif m_platform == 'Darwin': OS = 'macos'
-
 #Globals
-my_id = binascii.hexlify(os.urandom(3))
-firefox_pid = selftest_pid = 0
 audit_no = 0 #we may be auditing multiple URLs. This var keeps track of how many
 #successful audits there were so far and is used to index html files audited.
-suspended_session = None #while FF validates the certificate
 #Default values from the config file. Will be overridden after configfile is parsed
 global_tlsver = bytearray('\x03\x02')
 global_use_gzip = True
 global_use_slowaes = False
 global_use_paillier = False
-hcts = None #an http connection to notary
+random_uid = ''
+oracle_modulus = [200,206,3,195,115,240,245,171,146,48,87,244,28,184,6,253,36,28,201,42,163,10,2,113,165,195,180,162,209,12,74,118,133,170,236,185,52,20,121,92,140,131,66,32,133,233,147,209,176,76,156,79,14,189,86,65,16,214,6,182,132,159,144,194,243,15,126,236,236,52,69,102,75,34,254,167,110,251,254,186,193,182,162,25,75,218,240,221,148,145,140,112,238,138,104,46,240,194,192,173,65,83,7,25,223,102,197,161,126,43,44,125,129,68,133,41,10,223,94,252,143,147,118,123,251,178,7,216,167,212,165,187,115,58,232,254,76,106,55,131,73,194,36,74,188,226,104,201,128,194,175,120,198,119,237,71,205,214,56,119,36,77,28,22,215,61,13,144,145,6,120,46,19,217,155,118,237,245,78,136,233,106,108,223,209,115,95,223,10,147,171,215,4,151,214,200,9,27,49,180,23,136,54,194,168,147,33,15,204,237,68,163,149,152,125,212,9,243,81,145,20,249,125,44,28,19,155,244,194,237,76,52,200,219,227,24,54,15,88,170,36,184,109,122,187,224,77,188,126,212,143,93,30,143,133,58,99,169,222,225,26,29,223,22,27,247,92,225,253,124,185,77,118,117,0,83,169,28,217,22,200,68,109,17,198,88,203,163,33,3,184,236,43,170,51,225,147,255,78,41,154,197,8,171,81,253,134,151,107,68,23,66,7,81,150,5,110,184,138,22,137,46,209,152,39,227,125,106,161,131,240,41,82,65,223,129,172,90,26,189,158,240,66,244,253,246,167,66,170,209,20,162,210,245,110,193,172,24,188,18,23,207,10,83,84,250,96,149,144,126,237,45,194,154,163,145,235,30,41,235,211,162,201,215,4,58,102,133,60,43,166,143,81,187,7,72,140,76,120,146,248,54,106,170,25,126,241,161,106,103,108,108,123,10,88,180,208,219,53,34,106,206,96,55,108,24,238,126,194,107,88,32,77,180,29,73,193,13,123,99,229,219,197,175,244,70,8,110,113,130,126,8,109,74,216,203,61,26,146,195,228,240,25,150,173,47,123,108,94,106,114,13,212,195,246,24,42,138,245,122,63,112,93,201,174,104,30,14,112,18,214,80,139,58,224,215,185,12,69,203,206,112,58,231,171,117,159,214,73,173,44,155]
 
 
-#Receive AES cleartext and send ciphertext to browser
-class HandlerClass_aes(SimpleHTTPServer.SimpleHTTPRequestHandler):
-    #Using HTTP/1.0 instead of HTTP/1.1 is crucial, otherwise the minihttpd just keep hanging
-    #https://mail.python.org/pipermail/python-list/2013-April/645128.html
-    protocol_version = "HTTP/1.0"      
-
-    def do_HEAD(self):
-        print ('aes_http received ' + self.path[:80] + ' request',end='\r\n')
-        # example HEAD string "/command?parameter=124value1&para2=123value2"
-        # we need to adhere to CORS and add extra Access-Control-* headers in server replies
-
-        if self.path.startswith('/ready_to_decrypt'):
-            self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Expose-Headers", "status, response, ciphertext, key, iv")
-            self.send_header("response", "ready_to_decrypt")
-            self.send_header("status", "success")
-            #wait for sth to appear in the queue
-            ciphertext, key, iv = aes_ciphertext_queue.get()
-            self.send_header("ciphertext", b64encode(ciphertext))
-            self.send_header("key", b64encode(key))
-            self.send_header("iv", b64encode(iv))
-            global b_awaiting_cleartext
-            b_awaiting_cleartext = True            
-            self.end_headers()
-            return
-
-        if self.path.startswith('/cleartext'):
-            if not b_awaiting_cleartext:
-                print ('OUT OF ORDER:' + self.path)
-                raise Exception ('received a cleartext request out of order')
-            self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Expose-Headers", "status, response")
-            self.send_header("response", "cleartext")
-            self.send_header("status", "success")
-            cleartext = b64decode(self.path[len('/cleartext?b64cleartext='):])
-            aes_cleartext_queue.put(cleartext)
-            b_awaiting_cleartext = False            
-            self.end_headers()
-            return
-
-    #overriding BaseHTTPServer.py's method to cap the output
-    def log_message(self, fmt, *args):
-        sys.stderr.write("%s - - [%s] %s\n" %
-                         (self.client_address[0],
-                          self.log_date_time_string(),
-                          (fmt%args)[:80]))        
+def check_oracle():
+    print ('Oracle should be checked via AWS queries; not yet implemented')
+    
+def probe_server_modulus(server):
+    probe_session = shared.TLSNClientSession(server, tlsver=global_tlsver)
+    print ('ssl port is: ', probe_session.ssl_port)
+    tls_sock = shared.create_sock(probe_session.server_name,probe_session.ssl_port)
+    probe_session.start_handshake(tls_sock)
+    server_mod, server_exp = probe_session.extract_mod_and_exp()
+    tls_sock.close()
+    return shared.bi2ba(server_mod)
 
 
-#Receive HTTP HEAD requests from FF addon
-class HandleBrowserRequestsClass(SimpleHTTPServer.SimpleHTTPRequestHandler):
-    #HTTP/1.0 instead of HTTP/1.1 is crucial, otherwise the http server just keep hanging
-    #https://mail.python.org/pipermail/python-list/2013-April/645128.html
-    protocol_version = 'HTTP/1.0'
+def start_audit(server_name, headers, server_modulus):
+    global global_tlsver
+    global global_use_gzip
+    global global_use_slowaes
+    tlsn_session = shared.TLSNClientSession(server_name, tlsver=global_tlsver)
+    tlsn_session.server_modulus = shared.ba2int(server_modulus)
+    tlsn_session.server_mod_length = shared.bi2ba(len(server_modulus))        
+    print ('Preparing encrypted pre-master secret')
+    prepare_pms(tlsn_session)
 
-    def respond(self, headers):
-        # we need to adhere to CORS and add extra Access-Control-* headers in server replies                
-        keys = [k for k in headers]
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Expose-Headers', ','.join(keys))
-        for key in headers:
-            self.send_header(key, headers[key])
-        self.end_headers()        
-
-    def get_certificate(self, args):
-        if not args.startswith('b64headers='):
-            self.respond({'response':'get_certificate', 'status':'wrong HEAD parameter'})
-            return                    
-        b64headers = args[len('b64headers='):]
-        headers = b64decode(b64headers)
-        server_name, modified_headers = parse_headers(headers)        
-        print('Probing server to get its certificate')
+    for i in range(10):
         try:
-            probe_session = shared.TLSNClientSession(server_name, tlsver=global_tlsver)
-            probe_sock = shared.create_sock(probe_session.server_name,probe_session.ssl_port)
-            probe_session.start_handshake(probe_sock)
+            print ('Performing handshake with server')
+            tls_sock = shared.create_sock(tlsn_session.server_name,tlsn_session.ssl_port)
+            tlsn_session.start_handshake(tls_sock)
+            retval = negotiate_crippled_secrets(tlsn_session, tls_sock)
+            if not retval == 'success': 
+                raise shared.TLSNSSLError('Failed to negotiate secrets: '+retval)                         
+            #TODO: cert checking; how to do it for browserless mode?
+            #========================================================
+            #before sending any data to server compare this connection's cert to the
+            #one which FF already validated earlier
+            #if sha256(tlsn_session.server_certificate.asn1cert).hexdigest() != certhash:
+            #    raise Exception('Certificate mismatch')   
+            #========================================================
+            print ('Getting data from server')  
+            response = make_tlsn_request(headers,tlsn_session,tls_sock)
+            #prefix response with number of to-be-ignored records, 
+            #note: more than 256 unexpected records will cause a failure of audit. Just as well!
+            response = shared.bi2ba(tlsn_session.unexpected_server_app_data_count,fixed=1) + response
+            break
         except shared.TLSNSSLError:
-            shared.ssl_dump(probe_session)
-            raise
+            shared.ssl_dump(tlsn_session)
+            raise 
+        except Exception as e:
+            print ('Exception caught while getting data from server, retrying...', e)
+            if i == 9:
+                raise Exception('Audit failed')
+            continue
+
+    global audit_no
+    audit_no += 1 #we want to increase only after server responded with data
+    sf = str(audit_no)
+
+    commit_hash, pms2, signature = commit_session(tlsn_session, response,sf)
+    with open(join(current_session_dir,'sigfile'+sf),'wb') as f:
+        f.write(signature)
+    with open(join(current_session_dir,'commit_hash_pms2_servermod'+sf),'wb') as f:
+        f.write(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus))
+    
+    msg = sha256(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus)).digest()
+    oracle_int_modulus = shared.ba2int(bytearray('').join(map(chr,oracle_modulus)))
+    print ('oracle int mod: ', oracle_int_modulus)
+    if not shared.verify_signature(msg, signature, shared.ba2int(bytearray('').join(map(chr,oracle_modulus)))):
+        raise Exception("Audit FAILED, notary signature invalid.")
+    
+    print ('Verified OK')
+    audit_data = 'tlsnotary audit file\n\n'
+    audit_data += '\x00\x01' #2 version bytes
+    audit_data += shared.bi2ba(tlsn_session.chosen_cipher_suite,fixed=2) # 2 bytes
+    audit_data += tlsn_session.client_random + tlsn_session.server_random # 64 bytes
+    audit_data += tlsn_session.pms1 + pms2 #48 bytes
+    audit_data += tlsn_session.server_mod_length #2 bytes
+    audit_data += shared.bi2ba(tlsn_session.server_modulus) #256 bytes usually
+    audit_data += shared.bi2ba(tlsn_session.server_exponent, fixed=8) #8 bytes
+    audit_data += shared.bi2ba(len(tlsn_session.server_name),fixed=2)
+    audit_data += tlsn_session.server_name #variable; around 10 bytes
+    audit_data += tlsn_session.tlsver #2 bytes
+    audit_data += tlsn_session.initial_tlsver #2 bytes
+    audit_data += shared.bi2ba(len(response),fixed=8) #8 bytes
+    audit_data += response #note that it includes unexpected pre-request app data, 10s of kB
+    IV = tlsn_session.IV_after_finished if tlsn_session.chosen_cipher_suite in [47,53] \
+                else shared.rc4_state_to_bytearray(tlsn_session.IV_after_finished)
+    audit_data += shared.bi2ba(len(IV),fixed=2) #2 bytes
+    audit_data += IV #16 bytes or 258 bytes for RC4.
+    audit_data += signature #512 bytes RSA PKCS 1 v1.5 padding
+    audit_data += commit_hash #32 bytes sha256 hash
+    with open(join(install_dir,"public.pem"),"rb") as f:
+        audit_data += f.read()
+    
+    with open(join(current_session_dir,sf+".audit"),"wb") as f:
+        f.write(audit_data)
         
-        probe_sock.close()
-        certBase64 = b64encode(probe_session.server_certificate.asn1cert)
-        certhash = sha256(probe_session.server_certificate.asn1cert).hexdigest()
-        self.respond({'response':'get_certificate', 'status':'success','certBase64':certBase64})
-        return [server_name, modified_headers, certhash]
+    print ("\n\n AUDIT SUCCEEDED. \n ",
+    "You can pass the file(s) " , join(current_session_dir, "1.audit (and 2.audit etc. if they exist)"),
+    " to an auditor for verification.")
 
-
-    def start_audit(self, args):
-        global global_tlsver
-        global global_use_gzip
-        global global_use_slowaes
-        global suspended_session
-
-        arg1, arg2 = args.split('&')
-        if  not arg1.startswith('server_modulus=') or not arg2.startswith('ciphersuite='):
-            self.respond({'response':'start_audit', 'status':'wrong HEAD parameter'})
-            return        
-        server_modulus_hex = arg1[len('server_modulus='):]
-        #modulus is lowercase hexdigest
-        server_modulus = bytearray(server_modulus_hex.decode("hex"))
-        cs = arg2[len('ciphersuite='):] #used for testing, empty otherwise
-        server_name, modified_headers, certhash = suspended_session
-
-        tlsn_session = shared.TLSNClientSession(server_name, tlsver=global_tlsver)
-        tlsn_session.server_modulus = shared.ba2int(server_modulus)
-        tlsn_session.server_mod_length = shared.bi2ba(len(server_modulus))        
-        
-        print ('Preparing encrypted pre-master secret')
-        prepare_pms(tlsn_session)
- 
-
-        for i in range(10):
-            try:
-                print ('Performing handshake with server')
-                tls_sock = shared.create_sock(tlsn_session.server_name,tlsn_session.ssl_port)
-                tlsn_session.start_handshake(tls_sock)
-                retval = negotiate_crippled_secrets(tlsn_session, tls_sock)
-                if not retval == 'success': 
-                    raise shared.TLSNSSLError('Failed to negotiate secrets: '+retval)                         
-                #before sending any data to server compare this connection's cert to the
-                #one which FF already validated earlier
-                if sha256(tlsn_session.server_certificate.asn1cert).hexdigest() != certhash:
-                    raise Exception('Certificate mismatch')   
-                print ('Getting data from server')  
-                response = make_tlsn_request(modified_headers,tlsn_session,tls_sock)
-                #prefix response with number of to-be-ignored records, 
-                #note: more than 256 unexpected records will cause a failure of audit. Just as well!
-                response = shared.bi2ba(tlsn_session.unexpected_server_app_data_count,fixed=1) + response
-                break
-            except shared.TLSNSSLError:
-                shared.ssl_dump(tlsn_session)
-                raise 
-            except Exception as e:
-                print ('Exception caught while getting data from server, retrying...', e)
-                if i == 9:
-                    raise Exception('Audit failed')
-                continue
-
-        global audit_no
-        audit_no += 1 #we want to increase only after server responded with data
-        sf = str(audit_no)
-
-        commit_hash, pms2, signature = commit_session(tlsn_session, response,sf)
-        with open(join(current_session_dir,'sigfile'+sf),'wb') as f:
-            f.write(signature)
-        with open(join(current_session_dir,'commit_hash_pms2_servermod'+sf),'wb') as f:
-            f.write(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus))
-        #create temporary file containing hash of message (called the 'digest')
-        with open(join(current_session_dir,'commit_digest'+sf),'wb') as f:
-            f.write(sha256(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus)).digest())
-        print ('Verifying against notary server pubkey...')
-        if  not shared.verify_data(join(current_session_dir,'commit_digest'+sf),
-                           join(current_session_dir,'sigfile'+sf), join(install_dir,'public.pem')):
-            raise Exception("Audit FAILED, notary signature invalid.")
-        print ('Verified OK')
-        #another option would be a fixed binary format for a *.audit file: 
-        #cs|cr|sr|pms1|pms2|n|e|domain|tlsver|origtlsver|response|signature|notary_pubkey
-        audit_data = 'tlsnotary audit file\n\n'
-        audit_data += '\x00\x01' #2 version bytes
-        audit_data += shared.bi2ba(tlsn_session.chosen_cipher_suite,fixed=2) # 2 bytes
-        audit_data += tlsn_session.client_random + tlsn_session.server_random # 64 bytes
-        audit_data += tlsn_session.pms1 + pms2 #48 bytes
-        audit_data += tlsn_session.server_mod_length #2 bytes
-        audit_data += shared.bi2ba(tlsn_session.server_modulus) #256 bytes usually
-        audit_data += shared.bi2ba(tlsn_session.server_exponent, fixed=8) #8 bytes
-        audit_data += shared.bi2ba(len(tlsn_session.server_name),fixed=2)
-        audit_data += tlsn_session.server_name #variable; around 10 bytes
-        audit_data += tlsn_session.tlsver #2 bytes
-        audit_data += tlsn_session.initial_tlsver #2 bytes
-        audit_data += shared.bi2ba(len(response),fixed=8) #8 bytes
-        audit_data += response #note that it includes unexpected pre-request app data, 10s of kB
-        IV = tlsn_session.IV_after_finished if tlsn_session.chosen_cipher_suite in [47,53] \
-                    else shared.rc4_state_to_bytearray(tlsn_session.IV_after_finished)
-        audit_data += shared.bi2ba(len(IV),fixed=2) #2 bytes
-        audit_data += IV #16 bytes or 258 bytes for RC4.
-        audit_data += signature #512 bytes RSA PKCS 1 v1.5 padding
-        audit_data += commit_hash #32 bytes sha256 hash
-        with open(join(install_dir,"public.pem"),"rb") as f:
-            audit_data += f.read()
-        
-        with open(join(current_session_dir,sf+".audit"),"wb") as f:
-            f.write(audit_data)
-            
-        print ("\n\n AUDIT SUCCEEDED. \n ",
-        "You can pass the file(s) " , join(current_session_dir, "1.audit (and 2.audit etc. if they exist)"),
-        " to an auditor for verification.")
-
-        rv = decrypt_html(pms2, tlsn_session, sf)
-        if rv[0] == 'decrypt':
-            ciphertexts = rv[1]
-            ciphertext, key, iv = ciphertexts[0]
-            b64blob = b64encode(iv)+';'+b64encode(key)+';'+b64encode(ciphertext)
-            suspended_session = [tlsn_session, ciphertexts, [], 0, sf]
-            self.respond({'response':'start_audit', 'status':'success', 
-                          'next_action':'decrypt', 'argument':b64blob})
-            return
-        #else no browser decryption necessary
-        html_paths = b64encode(rv[1])
-        self.respond({'response':'start_audit', 'status':'success', 'next_action':'audit_finished', 'argument':html_paths})        
-
-    def process_cleartext(self, args):
-        global suspended_session
-        tlsn_session, ciphertexts, plaintexts, index, sf = suspended_session
-        raw_cleartext = b64decode(args[len('b64cleartext='):])
-        #crypto-js removes pkcs7 padding. There is still an extra byte which we remove it manually
-        plaintexts.append(raw_cleartext[:-1])
-        if (index+1) < len(ciphertexts):
-            index = index + 1
-            ciphertext, key, iv = ciphertexts[index]
-            b64blob = b64encode(iv)+';'+b64encode(key)+';'+b64encode(ciphertext)
-            suspended_session = [tlsn_session, ciphertexts, plaintexts, index, sf]
-            self.respond({'response':'cleartext', 'next_action':'decrypt', 
-                          'argument':b64blob, 'status':'success'})
-            return
-        #else this was the last decrypted ciphertext
-        plaintext = tlsn_session.mac_check_plaintexts(plaintexts)
-        rv = decrypt_html_stage2(plaintext, tlsn_session, sf)
-        self.respond({'response':'cleartext', 'status':'success', 'next_action':'audit_finished', 'argument':b64encode(rv[1])})        
-
-    def do_HEAD(self):
-        request = self.path
-        print ('browser sent ' + request[:80] + '... request',end='\r\n')
-        # example HEAD string "/command?parameter=124value1&para2=123value2"
-        if request.startswith('/get_certificate'):
-            global suspended_session
-            suspended_session  = self.get_certificate(request.split('?', 1)[1])
-        elif request.startswith('/start_audit'):
-            self.start_audit(request.split('?', 1)[1])
-        elif request.startswith('/cleartext'):
-            self.process_cleartext(request.split('?', 1)[1])   
-        else:
-            self.respond({'response':'unknown command'})
-
-    #overriding BaseHTTPRequestHandler's method to cap the output
-    def log_message(self, fmt, *args):
-        sys.stderr.write("%s - - [%s] %s\n" %
-                         (self.client_address[0],
-                          self.log_date_time_string(),
-                          (fmt%args)[:80]))
+    rv = decrypt_html(pms2, tlsn_session, sf)
+    html_paths = b64encode(rv[1])
+    return True
 
 #Because there is a 1 in ? chance that the encrypted PMS will contain zero bytes in its
 #padding, we first try the encrypted PMS with a reliable site and see if it gets rejected.
-#TODO the probability seems to have increased too much w.r.t. random padding, investigate
 def prepare_pms(tlsn_session):
     n = shared.bi2ba(tlsn_session.server_modulus)
     rs_choice = random.choice(shared.reliable_sites.keys())
@@ -300,9 +153,9 @@ def prepare_pms(tlsn_session):
                                   pms_session.client_random+pms_session.server_random+rs_choice[:5]+n)
             if reply[0] != 'success': 
                 raise Exception ('Failed to receive a reply for rcr_rsr_rsname_n:')
-            if not reply[1].startswith('rrsapms_rhmac_rsapms'):
+            if not reply[1]=='rrsapms_rhmac_rsapms':
                 raise Exception ('bad reply. Expected rrsapms_rhmac_rsapms:')
-            reply_data = reply[1][len('rrsapms_rhmac_rsapms:'):]
+            reply_data = reply[2]
             rrsapms2 = reply_data[:256]
             pms_session.p_auditor = reply_data[256:304]
             rsapms2 = reply_data[304:]
@@ -334,17 +187,18 @@ def prepare_pms(tlsn_session):
                      'double check that you are using a valid public key modulus for this site; '+\
                      'it may have expired.')
 
-def send_and_recv (hdr, dat,timeout=5):
-    rqstring = '/'+ my_id + hdr+':' + b64encode(dat)
-    hcts.request("HEAD", rqstring)
-    response = hcts.getresponse() 
-    received_hdr, received_dat = (response.getheader('response'),response.getheader('data'))
-    if 'busy' in received_hdr:
-        raise Exception("Notary server is busy, quitting. Try again later.")
-    return ('success', received_hdr+b64decode(received_dat))
+def send_and_recv (cmd, dat,timeout=5):
+    headers = {'Request':cmd,"Data":b64encode(dat),"UID":random_uid}
+    url = 'http://'+shared.config.get("Notary","server_name")+":"+shared.config.get("Notary","server_port")
+    r = requests.head(url,headers=headers)
+    r_response_headers = r.headers #case insensitive dict
+    received_cmd, received_dat = (r_response_headers['response'],r_response_headers['data'])
+    return ('success', received_cmd, b64decode(received_dat))
     
 #reconstruct correct http headers
 #for passing to TLSNotary custom ssl session
+#TODO not yet implemented in browserless mode; should
+#add standard headers, esp. gzip according to prefs
 def parse_headers(headers):
     header_lines = headers.split('\r\n') #no new line issues; it was constructed like that
     server = header_lines[1].split(':')[1].strip()
@@ -367,9 +221,9 @@ def negotiate_crippled_secrets(tlsn_session, tls_sock):
     reply = send_and_recv('cs_cr_sr_hmacms_verifymd5sha',cs_cr_sr_hmacms_verifymd5sha)
     if reply[0] != 'success': 
         raise Exception ('Failed to receive a reply for cs_cr_sr_hmacms_verifymd5sha:')
-    if not reply[1].startswith('hmacms_hmacek_hmacverify:'):
+    if not reply[1]=='hmacms_hmacek_hmacverify':
         raise Exception ('bad reply. Expected hmacms_hmacek_hmacverify but got', reply[1])
-    reply_data = reply[1][len('hmacms_hmacek_hmacverify:'):]
+    reply_data = reply[2]
     expanded_key_len = shared.tlsn_cipher_suites[tlsn_session.chosen_cipher_suite][-1]
     if len(reply_data) != 24+expanded_key_len+12:
         raise Exception('unexpected reply length in negotiate_crippled_secrets')
@@ -384,9 +238,9 @@ def negotiate_crippled_secrets(tlsn_session, tls_sock):
     reply = send_and_recv('verify_md5sha2',md5_digest2+sha_digest2)
     if reply[0] != 'success':
         raise Exception("Failed to receive a reply for verify_md5sha2")
-    if not reply[1].startswith('verify_hmac2:'):
+    if not reply[1]=='verify_hmac2':
         raise Exception("bad reply. Expected verify_hmac2:")
-    if not tlsn_session.check_server_ccs_finished(provided_p_value = reply[1][len('verify_hmac2:'):]):
+    if not tlsn_session.check_server_ccs_finished(provided_p_value = reply[2]):
         raise Exception ("Could not finish handshake with server successfully. Audit aborted")
     return 'success'    
 
@@ -425,9 +279,9 @@ def commit_session(tlsn_session,response,sf):
     #TODO: changed response from webserver
     if reply[0] != 'success': 
         raise Exception ('Failed to receive a reply') 
-    if not reply[1].startswith('pms2:'):
+    if not reply[1]=='pms2':
         raise Exception ('bad reply. Expected pms2')    
-    return (commit_hash, reply[1][len('pms2:'):len('pms2:')+24], reply[1][len('pms2:')+24:])
+    return (commit_hash, reply[2][:24], reply[2][24:])
 
 
 def decrypt_html(pms2, tlsn_session,sf):
@@ -442,23 +296,15 @@ def decrypt_html(pms2, tlsn_session,sf):
     except shared.TLSNSSLError:
         shared.ssl_dump(tlsn_session)
         raise
-    if global_use_slowaes or not tlsn_session.chosen_cipher_suite in [47,53]:
         #either using slowAES or a RC4 ciphersuite
-        try:
-            plaintext,bad_mac = tlsn_session.process_server_app_data_records()
-        except shared.TLSNSSLError:
-            shared.ssl_dump(tlsn_session)
-            raise
-        if bad_mac:
-            raise Exception("ERROR! Audit not valid! Plaintext is not authenticated.")
-        return decrypt_html_stage2(plaintext, tlsn_session, sf)
-    else: #AES ciphersuite and not using slowaes
-        try:
-            ciphertexts = tlsn_session.get_ciphertexts()
-        except:
-            shared.ssl_dump(tlsn_session)
-            raise
-        return ('decrypt', ciphertexts)
+    try:
+        plaintext,bad_mac = tlsn_session.process_server_app_data_records()
+    except shared.TLSNSSLError:
+        shared.ssl_dump(tlsn_session)
+        raise
+    if bad_mac:
+        raise Exception("ERROR! Audit not valid! Plaintext is not authenticated.")
+    return decrypt_html_stage2(plaintext, tlsn_session, sf)
 
 
 def decrypt_html_stage2(plaintext, tlsn_session, sf):
@@ -475,119 +321,6 @@ def decrypt_html_stage2(plaintext, tlsn_session, sf):
         with open(html_path,'wb') as f:
             f.write('\r\n\r\n'.join(plaintext.split('\r\n\r\n')[1:]))
     return ('success',html_path)
-
-#Make a local copy of firefox, find the binary, install the new profile
-#and start up firefox with that profile.
-def start_firefox(FF_to_backend_port, firefox_install_path):
-    #find the binary *before* copying; acts as sanity check
-    ffbinloc = {'linux':['firefox'],'mswin':['firefox.exe'],'macos':['Contents','MacOS','firefox']}
-    assert os.path.isfile(join(*([firefox_install_path]+ffbinloc[OS]))),\
-           "Firefox executable not found - invalid Firefox application directory."
-
-    local_ff_copy = join(data_dir,'Firefox.app') if OS=='macos' else join(data_dir,'firefoxcopy')  
-
-    #check if FF-addon/tlsnotary@tlsnotary files were modified. If so, get a fresh 
-    #firefoxcopy and FF-profile. This is useful for developers, otherwise
-    #we forget to do it manually and end up chasing wild geese
-    filehashes = []
-    for root, dirs, files in os.walk(join(data_dir, 'FF-addon', 'tlsnotary@tlsnotary')):
-        for onefile in files:
-            with open(join(root, onefile), 'rb') as f: filehashes.append(md5(f.read()).hexdigest())
-    #sort hashes and get the final hash
-    filehashes.sort()
-    final_hash = md5(''.join(filehashes)).hexdigest()
-    hash_path = join(data_dir, 'ffaddon.md5')
-    if not os.path.exists(hash_path):
-        with open(hash_path, 'wb') as f: f.write(final_hash)
-    else:
-        with open(hash_path, 'rb') as f: saved_hash = f.read()
-        if saved_hash != final_hash:
-            print("FF-addon directory changed since last invocation. Creating a new Firefox profile directory...")
-            try:
-                shutil.rmtree(join(data_dir, 'FF-profile'))
-            except:
-                pass
-            with open(hash_path, 'wb') as f: f.write(final_hash)            
-
-    firefox_exepath = join(*([firefox_install_path]+ffbinloc[OS]))
-
-    logs_dir = join(data_dir, 'logs')
-    if not os.path.isdir(logs_dir): os.makedirs(logs_dir)
-    with open(join(logs_dir, 'firefox.stdout'), 'w') as f: pass
-    with open(join(logs_dir, 'firefox.stderr'), 'w') as f: pass
-    ffprof_dir = join(data_dir, 'FF-profile')
-    if not os.path.exists(ffprof_dir): os.makedirs(ffprof_dir)
-    shutil.copyfile(join(data_dir,'prefs.js'),join(ffprof_dir,'prefs.js'))
-    shutil.copyfile(join(data_dir,'localstore.rdf'),join(ffprof_dir,'localstore.rdf'))
-    shutil.copyfile(join(data_dir,'extensions.json'),join(ffprof_dir,'extensions.json'))
-
-    extension_path = join(ffprof_dir, 'extensions', 'tlsnotary@tlsnotary')
-    if not os.path.exists(extension_path):
-        shutil.copytree(join(data_dir, 'FF-addon', 'tlsnotary@tlsnotary'),extension_path)
-
-    #Disable addon compatibility check on startup (note: disabled for MacOS)
-    if OS != 'macos':
-        try:
-            application_ini_data = None
-            with open(join(firefox_install_path, 'application.ini'), 'r') as f: application_ini_data = f.read()
-            version_pos = application_ini_data.find('Version=')+len('Version=')
-            #version string can be 34.0 or 34.0.5
-            version_raw = application_ini_data[version_pos:version_pos+8]
-            version = ''.join(char for char in version_raw if char in '1234567890.')
-    
-            with open(join(ffprof_dir, 'prefs.js'), 'a') as f:
-                f.write('user_pref("extensions.lastAppVersion", "' + version + '"); ')
-        except:
-            print ('Failed to disable add-on compatibility check')
-
-    os.putenv('FF_to_backend_port', str(FF_to_backend_port))
-    os.putenv('FF_first_window', 'true')   #prevents addon confusion when websites open multiple FF windows
-    if not global_use_slowaes:
-        os.putenv('TLSNOTARY_USING_BROWSER_AES_DECRYPTION', 'true')
-
-    print ('Starting a new instance of Firefox with tlsnotary profile',end='\r\n')
-    try: ff_proc = Popen([firefox_exepath,'-no-remote', '-profile', ffprof_dir],
-                         stdout=open(join(logs_dir, 'firefox.stdout'),'w'), 
-                         stderr=open(join(logs_dir, 'firefox.stderr'), 'w'))
-    except Exception,e: return ('Error starting Firefox: %s' %e,)
-    return ('success', ff_proc)
-
-#HTTP server to talk with Firefox addon
-def http_server(parentthread): 
-    print ('Starting http server to communicate with Firefox addon')
-    try:
-        httpd = shared.StoppableHttpServer(('127.0.0.1', 0), HandleBrowserRequestsClass)
-    except Exception, e:
-        parentthread.retval = ('failure',)
-        return
-    #Caller checks thread.retval for httpd status
-    parentthread.retval = ('success', httpd.server_port)
-    print ('Serving HTTP on port ', str(httpd.server_port), end='\r\n')
-    httpd.serve_forever()
-
-
-#use miniHTTP server to receive commands from Firefox addon and respond to them
-def aes_decryption_thread(parentthread):    
-    print ('Starting AES decryption server')
-    try:
-        aes_httpd = shared.StoppableHttpServer(('127.0.0.1', 0), HandlerClass_aes)
-    except Exception, e:
-        parentthread.retval = ('failure',)
-        return
-    #Caller checks thread.retval for httpd status
-    parentthread.retval = ('success',  aes_httpd.server_port)
-    print ('Receiving decrypted AES on port ', str(aes_httpd.server_port), end='\r\n')
-    aes_httpd.serve_forever()
-
-#cleanup
-def quit_clean(sig=0, frame=0):
-    if firefox_pid != 0:
-        try: os.kill(firefox_pid, signal.SIGTERM)
-        except: pass #firefox not runnng
-    if selftest_pid != 0:
-        try: os.kill(selftest_pid, signal.SIGTERM)
-        except: pass #selftest not runnng    
-    exit(1)
 
 #unpack and check validity of Python modules
 def first_run_check(modname,modhash):
@@ -629,8 +362,7 @@ if __name__ == "__main__":
     import shared
     shared.load_program_config()
     shared.import_reliable_sites(join(install_dir,'src','shared'))
-    hcts = httplib.HTTPConnection(shared.config.get("Notary","server_name")\
-                                  +":"+shared.config.get("Notary","server_port"))
+    random_uid = ''.join(random.choice(string.ascii_lowercase+string.digits) for x in range(10))
     #override default config values
     if int(shared.config.get("General","tls_11")) == 0: 		
         global_tlsver = bytearray('\x03\x01')
@@ -640,83 +372,14 @@ if __name__ == "__main__":
         global_use_gzip = False
     if int(shared.config.get("General","use_paillier_scheme")) == 1:
         global_use_paillier = True    
-
-
-    firefox_install_path = None
-    if len(sys.argv) > 1: firefox_install_path = sys.argv[1]
-    if firefox_install_path in ('test', 'randomtest'): firefox_install_path = None
-
-    if mode == 'normal':
-        if not firefox_install_path:
-            if OS=='linux':
-                if not os.path.exists('/usr/lib/firefox'):
-                    raise Exception ("Could not set firefox install path")
-                firefox_install_path = '/usr/lib/firefox'
-            elif OS=='mswin':
-                bFound = False
-                prog64 = os.getenv('ProgramW6432')
-                prog32 = os.getenv('ProgramFiles(x86)')
-                progxp = os.getenv('ProgramFiles')			
-                if prog64:
-                    if os.path.exists(join(prog64,'Mozilla Firefox')):
-                        firefox_install_path = join(prog64,'Mozilla Firefox')
-                        bFound = True
-                if not bFound and prog32:
-                    if os.path.exists(join(prog32,'Mozilla Firefox')):
-                        firefox_install_path = join(prog32,'Mozilla Firefox')
-                        bFound = True
-                if not bFound and progxp:
-                    if os.path.exists(join(progxp,'Mozilla Firefox')):
-                        firefox_install_path = join(progxp,'Mozilla Firefox')
-                        bFound = True
-                if not bFound:
-                    raise Exception('Could not set firefox install path')
-            elif OS=='macos':
-                if not os.path.exists(join("/","Applications","Firefox.app")):
-                    raise Exception('''Could not set firefox install path. 
-                    Please make sure Firefox is in your Applications folder''')
-                firefox_install_path = join("/","Applications","Firefox.app")
-            else:
-                raise Exception("Unrecognised operating system.")           
-        print ("Firefox install path is: ",firefox_install_path)
-        if not os.path.exists(firefox_install_path): 
-            raise Exception ("Could not find Firefox installation")
-
-    thread = shared.ThreadWithRetval(target= http_server)
-    thread.daemon = True
-    thread.start()
-    #wait for minihttpd thread to indicate its status and FF_to_backend_port  
-    b_was_started = False
-    for i in range(10):
-        time.sleep(1)        
-        if thread.retval == '': continue
-        #else
-        if thread.retval[0] != 'success': 
-            raise Exception (
-                'Failed to start minihttpd server. Please investigate')
-        #else
-        b_was_started = True
-        break
-    if b_was_started == False:
-        raise Exception ('minihttpd failed to start in 10 secs. Please investigate')
-    FF_to_backend_port = thread.retval[1]
-
-    if mode == 'addon':
-        with open (join(data_dir, 'ports'), 'w') as f:
-            f.write(str(FF_to_backend_port))
-    elif mode == 'normal':
-        ff_retval = start_firefox(FF_to_backend_port, firefox_install_path)
-        if ff_retval[0] != 'success': 
-            raise Exception (
-                'Error while starting Firefox: '+ ff_retval[0])
-        ff_proc = ff_retval[1]
-        firefox_pid = ff_proc.pid 
-
-    signal.signal(signal.SIGTERM, quit_clean)
-
-    try:
-        while True:
-            time.sleep(1)
-            if mode == 'normal':
-                if ff_proc.poll() != None: quit_clean() #FF was closed
-    except KeyboardInterrupt: quit_clean()            
+    
+    check_oracle()
+    host = sys.argv[1].split('/')[0]
+    url = '/'.join(sys.argv[1].split('/')[1:])
+    server_mod = probe_server_modulus(host)
+    #TODO obv needs to be configurable, best to have whole http request read in from a file
+    headers = "GET" + " /" + url + " HTTP/1.1" + "\r\n" + "Host: " + host + "\r\n\r\n"
+    if start_audit(host, headers, server_mod):
+        print ('successfully finished')
+    else:
+        print ('failed to complete notarization')
