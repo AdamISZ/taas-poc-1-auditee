@@ -83,7 +83,7 @@ def start_audit(server_name, headers, server_modulus):
         except Exception as e:
             print ('Exception caught while getting data from server, retrying...', e)
             if i == 9:
-                raise Exception('Audit failed')
+                raise Exception('Notarization failed')
             continue
 
     global audit_no
@@ -97,21 +97,19 @@ def start_audit(server_name, headers, server_modulus):
         f.write(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus))
     
     msg = sha256(commit_hash+pms2+shared.bi2ba(tlsn_session.server_modulus)).digest()
-    oracle_int_modulus = shared.ba2int(bytearray('').join(map(chr,oracle_modulus)))
-    if not shared.verify_signature(msg, signature, shared.ba2int(bytearray('').join(map(chr,oracle_modulus)))):
-        raise Exception("Audit FAILED, notary signature invalid.")
+    oracle_ba_modulus = bytearray('').join(map(chr,oracle_modulus))
+    oracle_int_modulus = shared.ba2int(oracle_ba_modulus)
+    if not shared.verify_signature(msg, signature, oracle_int_modulus):
+        raise Exception("Notarization FAILED, notary signature invalid.")
     
     print ('Verified OK')
-    audit_data = 'tlsnotary audit file\n\n'
+    audit_data = 'tlsnotary notarization file\n\n'
     audit_data += '\x00\x01' #2 version bytes
     audit_data += shared.bi2ba(tlsn_session.chosen_cipher_suite,fixed=2) # 2 bytes
     audit_data += tlsn_session.client_random + tlsn_session.server_random # 64 bytes
     audit_data += tlsn_session.pms1 + pms2 #48 bytes
-    audit_data += tlsn_session.server_mod_length #2 bytes
-    audit_data += shared.bi2ba(tlsn_session.server_modulus) #256 bytes usually
-    audit_data += shared.bi2ba(tlsn_session.server_exponent, fixed=8) #8 bytes
-    audit_data += shared.bi2ba(len(tlsn_session.server_name),fixed=2)
-    audit_data += tlsn_session.server_name #variable; around 10 bytes
+    audit_data += shared.bi2ba(len(tlsn_session.server_certificate.certs),fixed=3)
+    audit_data += tlsn_session.server_certificate.certs
     audit_data += tlsn_session.tlsver #2 bytes
     audit_data += tlsn_session.initial_tlsver #2 bytes
     audit_data += shared.bi2ba(len(response),fixed=8) #8 bytes
@@ -120,17 +118,17 @@ def start_audit(server_name, headers, server_modulus):
                 else shared.rc4_state_to_bytearray(tlsn_session.IV_after_finished)
     audit_data += shared.bi2ba(len(IV),fixed=2) #2 bytes
     audit_data += IV #16 bytes or 258 bytes for RC4.
+    audit_data += shared.bi2ba(len(oracle_ba_modulus),fixed=2) 
     audit_data += signature #512 bytes RSA PKCS 1 v1.5 padding
     audit_data += commit_hash #32 bytes sha256 hash
-    with open(join(install_dir,"public.pem"),"rb") as f:
-        audit_data += f.read()
+    audit_data += oracle_ba_modulus
     
-    with open(join(current_session_dir,sf+".audit"),"wb") as f:
+    with open(join(current_session_dir,sf+".pgsg"),"wb") as f:
         f.write(audit_data)
         
-    print ("\n\n AUDIT SUCCEEDED. \n ",
-    "You can pass the file(s) " , join(current_session_dir, "1.audit (and 2.audit etc. if they exist)"),
-    " to an auditor for verification.")
+    print ("\n\n NOTARIZATION SUCCEEDED. \n ",
+    "You can pass the file(s) " , join(current_session_dir, "1.pgsg"),
+    " to an auditor for verification, or import into the PageSigner extension.")
 
     rv = decrypt_html(pms2, tlsn_session, sf)
     html_paths = b64encode(rv[1])

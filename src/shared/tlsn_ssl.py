@@ -268,6 +268,9 @@ class TLSCertificate(TLSHandshake):
         #so the first cert data starts at byte position 10 
         self.cert_len = ba2int(self.serialized[7:10])
         self.asn1cert = self.serialized[10:10+self.cert_len]
+        #used for pagesigner: just store all the certs and certlengths
+        #after the initial certs_list_msg_len field
+        self.certs = self.serialized[7:]
             
             
 class TLSServerHelloDone(TLSHandshake):
