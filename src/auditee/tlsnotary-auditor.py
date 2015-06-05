@@ -32,12 +32,15 @@ global_use_gzip = True
 global_use_slowaes = False
 global_use_paillier = False
 hcts = None #an http connection to notary
-    
+oracle_modulus = [200,206,3,195,115,240,245,171,146,48,87,244,28,184,6,253,36,28,201,42,163,10,2,113,165,195,180,162,209,12,74,118,133,170,236,185,52,20,121,92,140,131,66,32,133,233,147,209,176,76,156,79,14,189,86,65,16,214,6,182,132,159,144,194,243,15,126,236,236,52,69,102,75,34,254,167,110,251,254,186,193,182,162,25,75,218,240,221,148,145,140,112,238,138,104,46,240,194,192,173,65,83,7,25,223,102,197,161,126,43,44,125,129,68,133,41,10,223,94,252,143,147,118,123,251,178,7,216,167,212,165,187,115,58,232,254,76,106,55,131,73,194,36,74,188,226,104,201,128,194,175,120,198,119,237,71,205,214,56,119,36,77,28,22,215,61,13,144,145,6,120,46,19,217,155,118,237,245,78,136,233,106,108,223,209,115,95,223,10,147,171,215,4,151,214,200,9,27,49,180,23,136,54,194,168,147,33,15,204,237,68,163,149,152,125,212,9,243,81,145,20,249,125,44,28,19,155,244,194,237,76,52,200,219,227,24,54,15,88,170,36,184,109,122,187,224,77,188,126,212,143,93,30,143,133,58,99,169,222,225,26,29,223,22,27,247,92,225,253,124,185,77,118,117,0,83,169,28,217,22,200,68,109,17,198,88,203,163,33,3,184,236,43,170,51,225,147,255,78,41,154,197,8,171,81,253,134,151,107,68,23,66,7,81,150,5,110,184,138,22,137,46,209,152,39,227,125,106,161,131,240,41,82,65,223,129,172,90,26,189,158,240,66,244,253,246,167,66,170,209,20,162,210,245,110,193,172,24,188,18,23,207,10,83,84,250,96,149,144,126,237,45,194,154,163,145,235,30,41,235,211,162,201,215,4,58,102,133,60,43,166,143,81,187,7,72,140,76,120,146,248,54,106,170,25,126,241,161,106,103,108,108,123,10,88,180,208,219,53,34,106,206,96,55,108,24,238,126,194,107,88,32,77,180,29,73,193,13,123,99,229,219,197,175,244,70,8,110,113,130,126,8,109,74,216,203,61,26,146,195,228,240,25,150,173,47,123,108,94,106,114,13,212,195,246,24,42,138,245,122,63,112,93,201,174,104,30,14,112,18,214,80,139,58,224,215,185,12,69,203,206,112,58,231,171,117,159,214,73,173,44,155]
+oracle_ba_modulus = None
+oracle_int_modulus = None
+
 def extract_audit_data(audit_filename):
     audit_data = {}
     with open(audit_filename,'rb') as f:
-        header = f.read(22)
-        if header != 'tlsnotary audit file\n\n':
+        header = f.read(29)
+        if header != 'tlsnotary notarization file\n\n':
             raise Exception("Invalid file format")
         version = f.read(2)
         if version != '\x00\x01':
@@ -47,11 +50,8 @@ def extract_audit_data(audit_filename):
         audit_data['server_random'] = f.read(32)
         audit_data['pms1'] = f.read(24)
         audit_data['pms2'] = f.read(24)
-        server_mod_length = shared.ba2int(f.read(2))
-        audit_data['server_modulus'] = shared.ba2int(f.read(server_mod_length))
-        audit_data['server_exponent'] = shared.ba2int(f.read(8))
-        server_name_length = shared.ba2int(f.read(2))
-        audit_data['server_name'] = f.read(server_name_length)
+        audit_data['certs_len'] = shared.ba2int(f.read(3))
+        audit_data['certs'] = f.read(audit_data['certs_len'])
         audit_data['tlsver'] = f.read(2)
         audit_data['initial_tlsver'] = f.read(2)
         response_len = shared.ba2int(f.read(8))
@@ -61,9 +61,14 @@ def extract_audit_data(audit_filename):
             print ("IV length was: ", IV_len)
             raise Exception("Wrong IV format in audit file")
         audit_data['IV'] = f.read(IV_len)
-        audit_data['signature'] = f.read(512) #4096 bit
+        audit_data['oracle_modulus_len'] = f.read(2) #TODO can check this
+        audit_data['signature'] = f.read(len(oracle_ba_modulus))
         audit_data['commit_hash'] = f.read(32)
-        audit_data['pubkey_pem'] = f.read()
+        audit_data['oracle_modulus'] = f.read()
+        if audit_data['oracle_modulus'] != oracle_ba_modulus:
+            print ("file mod was: ", binascii.hexlify(audit_data['oracle_modulus']))
+            print ("actual was: ", binascii.hexlify(oracle_ba_modulus))
+            raise Exception("Unrecognized oracle")
     return audit_data
 
 #unpack and check validity of Python modules
@@ -97,28 +102,27 @@ if __name__ == "__main__":
     from pyasn1.codec.der import encoder, decoder
     from slowaes import AESModeOfOperation        
     import shared
+    oracle_ba_modulus = bytearray('').join(map(chr,oracle_modulus))
+    oracle_int_modulus = shared.ba2int(oracle_ba_modulus)     
+
     shared.load_program_config()
     
     if int(shared.config.get("General","gzip_disabled")) == 1:
         global_use_gzip = False   
     
     audit_data = extract_audit_data(audit_filename)
-    #1. Verify notary pubkey
-    with open(join(install_dir,'public.pem'),'rb') as f:
-        our_pubkey = f.read()
-    if not our_pubkey == audit_data['pubkey_pem']:
-        print ('Your auditee is using a different notary public key, audit cannot be carried out.')
-        exit()
+    #1. Verify notary pubkey - done in extract_audit_data
     print ('Notary pubkey OK')
     #2. Verify signature
-    data_to_be_verified = audit_data['commit_hash'] + audit_data['pms2'] + shared.bi2ba(audit_data['server_modulus'])
+    dummy_session = shared.TLSNClientSession()
+    first_cert_len = shared.ba2int(audit_data['certs'][:3])
+    server_mod, server_exp = dummy_session.extract_mod_and_exp(certDER=audit_data['certs'][3:3+first_cert_len])
+    data_to_be_verified = audit_data['commit_hash'] + audit_data['pms2'] + shared.bi2ba(server_mod)
     data_to_be_verified = sha256(data_to_be_verified).digest()
-    with open(join(install_dir,'tempmessagefile'),'wb') as f: f.write(data_to_be_verified)
-    with open(join(install_dir,'tempsigfile'),'wb') as f: f.write(audit_data['signature'])
-    if not shared.verify_data(join(install_dir,'tempmessagefile'), 
-                            join(install_dir,'tempsigfile'), join(install_dir,'public.pem')):
+    if not shared.verify_signature(data_to_be_verified, audit_data['signature'],
+                                   oracle_int_modulus):
         print ('Audit FAILED. Signature is not verified.')
-        exit()
+        exit()        
     print ('Notary signature OK')
     #3. Verify commitment hash.
     if not sha256(audit_data['response']).digest() == audit_data['commit_hash']:
@@ -126,8 +130,7 @@ if __name__ == "__main__":
         exit()
     print ('Commitment hash OK')
     #4 Decrypt html and check for mac errors.
-    audit_session = shared.TLSNClientSession(server=audit_data['server_name'],
-                    ccs=audit_data['cipher_suite'],tlsver=audit_data['initial_tlsver'])
+    audit_session = shared.TLSNClientSession(ccs=audit_data['cipher_suite'],tlsver=audit_data['initial_tlsver'])
     audit_session.unexpected_server_app_data_count = shared.ba2int(audit_data['response'][0])
     audit_session.tlsver = audit_data['tlsver']
     audit_session.client_random = audit_data['client_random']
@@ -153,11 +156,11 @@ if __name__ == "__main__":
     with open(join(current_session_dir,'audited.html'),'wb') as f:
         f.write(plaintext)
     #print out the info about the domain
-    n_hexlified = binascii.hexlify(shared.bi2ba(audit_data['server_modulus']))
+    n_hexlified = binascii.hexlify(shared.bi2ba(server_mod))
     #pubkey in the format 09 56 23 ....
     n_write = " ".join(n_hexlified[i:i+2] for i in range(0, len(n_hexlified), 2))
     with open(join(current_session_dir,'domain_data.txt'), 'wb') as f: 
-        f.write('Server name: ' + audit_data['server_name'] + '\n\n' + n_write)    
+        f.write('Server pubkey:' + '\n\n' + n_write+'\n')    
 
     print ("Audit passed! You can read the html at: ",
            join(current_session_dir,'audited.html'), 
