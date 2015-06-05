@@ -114,13 +114,16 @@ if __name__ == "__main__":
     #1. Verify notary pubkey - done in extract_audit_data
     print ('Notary pubkey OK')
     #2. Verify signature
-    dummy_session = shared.TLSNClientSession()
+    #First, extract the cert in DER form from the notarization file
+    #Then, extract from the cert the modulus and server name (common name field)
+    #To do this, we need to initialise the TLSNClientSession
+    audit_session = shared.TLSNClientSession(ccs=audit_data['cipher_suite'],tlsver=audit_data['initial_tlsver'])
     first_cert_len = shared.ba2int(audit_data['certs'][:3])
-    server_mod, server_exp = dummy_session.extract_mod_and_exp(certDER=audit_data['certs'][3:3+first_cert_len])
+    server_mod, server_exp = audit_session.extract_mod_and_exp(certDER=audit_data['certs'][3:3+first_cert_len], sn=True)
+    print ('Processing data for server: ', audit_session.server_name)
     data_to_be_verified = audit_data['commit_hash'] + audit_data['pms2'] + shared.bi2ba(server_mod)
     data_to_be_verified = sha256(data_to_be_verified).digest()
-    if not shared.verify_signature(data_to_be_verified, audit_data['signature'],
-                                   oracle_int_modulus):
+    if not shared.verify_signature(data_to_be_verified, audit_data['signature'],oracle_int_modulus):
         print ('Audit FAILED. Signature is not verified.')
         exit()        
     print ('Notary signature OK')
@@ -130,7 +133,6 @@ if __name__ == "__main__":
         exit()
     print ('Commitment hash OK')
     #4 Decrypt html and check for mac errors.
-    audit_session = shared.TLSNClientSession(ccs=audit_data['cipher_suite'],tlsver=audit_data['initial_tlsver'])
     audit_session.unexpected_server_app_data_count = shared.ba2int(audit_data['response'][0])
     audit_session.tlsver = audit_data['tlsver']
     audit_session.client_random = audit_data['client_random']
@@ -160,7 +162,7 @@ if __name__ == "__main__":
     #pubkey in the format 09 56 23 ....
     n_write = " ".join(n_hexlified[i:i+2] for i in range(0, len(n_hexlified), 2))
     with open(join(current_session_dir,'domain_data.txt'), 'wb') as f: 
-        f.write('Server pubkey:' + '\n\n' + n_write+'\n')    
+        f.write('Server name: '+audit_session.server_name + '\n\n'+'Server pubkey:' + '\n\n' + n_write+'\n')    
 
     print ("Audit passed! You can read the html at: ",
            join(current_session_dir,'audited.html'), 

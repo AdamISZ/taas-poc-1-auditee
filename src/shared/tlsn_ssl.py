@@ -725,9 +725,11 @@ class TLSNClientSession(object):
         tls_sender(sckt,self.handshake_messages[6],hs, conn=self.client_connection_state, tlsver=self.tlsver)
         return recv_socket(sckt,True)
             
-    def extract_mod_and_exp(self, certDER=None):
+    def extract_mod_and_exp(self, certDER=None, sn=False):
         DER_cert_data = certDER if certDER else self.server_certificate.asn1cert
         rv  = decoder.decode(DER_cert_data, asn1Spec=univ.Sequence())
+        if sn:
+            self.server_name = str(rv[0].getComponentByPosition(0).getComponentByPosition(5).getComponentByPosition(4).getComponentByPosition(0).getComponentByPosition(1))
         bit_string = rv[0].getComponentByPosition(0).getComponentByPosition(6).getComponentByPosition(1)
         #bit_string is a list of ints, like [01110001010101000...]
         #convert it into into a string   '01110001010101000...'
