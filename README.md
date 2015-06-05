@@ -1,3 +1,5 @@
+NOTE: This code has been updated and moved to github.com/tlsnotary/pagesigner-browserless, please use that instead.
+
 # Browserless PageSigner
 
 Intended to be run as a script.
